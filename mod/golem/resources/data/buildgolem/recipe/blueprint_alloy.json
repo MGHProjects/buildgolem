@@ -1,0 +1,13 @@
+{
+  "type": "minecraft:blasting",
+  "category": "misc",
+  "ingredient": {
+    "item": "buildgolem:builder_dust"
+  },
+  "result": {
+    "id": "buildgolem:blueprint_alloy",
+    "count": 1
+  },
+  "experience": 2,
+  "cookingtime": 400
+}

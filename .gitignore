@@ -1,0 +1,19 @@
+node_modules/
+server/data/
+server/.env*
+web/dist/
+*.log
+mod/build/
+mod/.gradle/
+mod/run/
+mod/runs/
+
+# local, temporal o regenerable
+.claude/
+.playwright-mcp/
+shots/
+bloques_ATM10A.txt
+# texturas sacadas de los jars de Minecraft y de los mods (no son nuestras): se regeneran con visor/extraer_texturas.py
+visor/texturas/
+# enlaces de acceso del visor (secretos)
+visor-server/token_*.txt

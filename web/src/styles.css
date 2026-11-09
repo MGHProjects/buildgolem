@@ -1,0 +1,124 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+@import "@fontsource/pixelify-sans/400.css";
+@import "@fontsource/pixelify-sans/600.css";
+@import "../../engine/viewer.css";
+
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+/* BuildGolem (docs/DESIGN.md): hierro del gólem (neutros), plano de obra (trazo azul de cianotipo) y un solo acento,
+   el amarillo de seguridad del casco. Oscuro = taller de noche (hierro carbón); claro = hormigón. Rojo amapola para errores. */
+:root {
+  color-scheme: light;
+  --bg: #eceef0; --surface: #f8f9fa; --surface-2: #e1e5e9; --line: #c3cad1; --fg: #161b20; --muted: #4a545e;
+  --ink: #1d5a94; --grid: rgb(29 90 148 / .07); --grid-major: rgb(29 90 148 / .13);
+  --accent: #FFC21A; --accent-deep: #c99200; --accent-ink: #855c00; --on-accent: #1a1405; --danger: #c4282d; --ok: #2f7d55; --ring: #855c00;
+}
+[data-theme=dark] {
+  color-scheme: dark;
+  --bg: #121518; --surface: #191d21; --surface-2: #21262b; --line: #333b43; --fg: #eef1f4; --muted: #9aa4ae;
+  --ink: #6fa8dc; --grid: rgb(111 168 220 / .05); --grid-major: rgb(111 168 220 / .1);
+  --accent: #FFC21A; --accent-deep: #b78400; --accent-ink: #ffd15c; --on-accent: #1a1405; --danger: #ff7a70; --ok: #5bc48f; --ring: #ffd15c;
+}
+@theme {
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+  --color-bg: var(--bg); --color-surface: var(--surface); --color-surface-2: var(--surface-2); --color-line: var(--line);
+  --color-fg: var(--fg); --color-muted: var(--muted); --color-ink: var(--ink); --color-accent: var(--accent); --color-accent-ink: var(--accent-ink);
+  --color-on-accent: var(--on-accent); --color-accent-deep: var(--accent-deep); --color-danger: var(--danger); --color-ok: var(--ok);
+  --font-pixel: 'Pixelify Sans', ui-monospace, monospace;
+  --radius-card: 6px;
+}
+
+html { background: var(--bg); color: var(--fg); }
+body { margin: 0; font-family: var(--font-sans); -webkit-font-smoothing: antialiased; background: var(--bg); }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 3px; }
+a, button, summary, select, label[for], [role=button] { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .55; }
+h1, h2, h3 { text-wrap: balance; }
+select { background-color: var(--surface); color: var(--fg); }
+input[type=checkbox], input[type=radio], input[type=range] { accent-color: var(--accent); }
+html { -webkit-tap-highlight-color: transparent; }
+button, a { touch-action: manipulation; }
+::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+@layer components {
+/* papel de plano: rejilla fina cada 24 px y gruesa cada 120 px (la hoja sobre la que se dibuja) */
+.bp-paper {
+  background-color: var(--bg);
+  background-image: linear-gradient(var(--grid-major) 1px, transparent 1px), linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+    linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px;
+  background-position: -1px -1px;
+}
+
+/* cota: línea fina con remates y la medida en mono */
+.cota { display: flex; align-items: center; gap: .5rem; font: 500 12px/1 var(--font-mono); color: var(--accent-ink); letter-spacing: .02em; }
+.cota::before, .cota::after { content: ''; height: 7px; flex: 1; opacity: .7;
+  background: linear-gradient(currentColor, currentColor) 0 50% / 100% 1px no-repeat, linear-gradient(currentColor, currentColor) 0 0 / 1px 100% no-repeat; }
+.cota::after { background: linear-gradient(currentColor, currentColor) 0 50% / 100% 1px no-repeat, linear-gradient(currentColor, currentColor) 100% 0 / 1px 100% no-repeat; }
+
+/* cajetín: celdas con etiqueta pequeña y valor, como el bloque de datos de un plano */
+.cajetin { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, auto); border: 1px solid var(--line); }
+.cajetin > * { display: grid; gap: 1px; padding: 4px 10px; border-left: 1px solid var(--line); min-width: 0; }
+.cajetin > *:first-child { border-left: 0; }
+.cajetin small { font-size: 10px; color: var(--muted); line-height: 1.2; }
+.cajetin span { font: 500 12px/1.3 var(--font-mono); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* tooltip de los botones de icono */
+[data-tip] { position: relative; }
+.tip-host:hover > .tip, .tip-host:focus-visible > .tip { opacity: 1; transform: translate(-50%, 0); transition-delay: .25s; }
+.tip { position: absolute; left: 50%; top: calc(100% + 6px); transform: translate(-50%, -2px); z-index: 60; pointer-events: none; opacity: 0;
+  white-space: nowrap; font: 500 12px/1 var(--font-sans); color: var(--fg); background: var(--surface-2); border: 1px solid var(--line); border-radius: 3px; padding: 6px 8px;
+  transition: opacity .12s, transform .12s; }
+.tip[data-side=right] { left: calc(100% + 8px); top: 50%; transform: translate(-2px, -50%); }
+.tip-host:hover > .tip[data-side=right], .tip-host:focus-visible > .tip[data-side=right] { transform: translate(0, -50%); }
+.tip[data-side=end] { left: auto; right: 0; transform: translate(0, -2px); }
+.tip-host:hover > .tip[data-side=end], .tip-host:focus-visible > .tip[data-side=end] { transform: translate(0, 0); }
+}
+
+@keyframes draw { from { transform: scaleX(0); } 60% { transform: scaleX(1); opacity: 1; } to { transform: scaleX(1); opacity: 0; } }
+
+/* cinta de obra: franjas amarillas y negras, solo para marcar "en construcción" (pocas veces) */
+.hazard { background: repeating-linear-gradient(-45deg, var(--accent) 0 10px, #1a1405 10px 20px); }
+
+/* trazo de plano que se dibuja (landing) */
+.bp-stroke { fill: none; stroke: var(--ink); vector-effect: non-scaling-stroke; }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+/* cursor de plano (solo con ratón): flecha con punta cobre, retícula sobre lo que se pulsa y cruz en el 3D */
+@media (pointer: fine) {
+  html { cursor: url(/cursors/arrow.svg) 5 3, auto; }
+  a, button, [role=button], [role=menuitem], [role=radio], summary, select, label[for], input[type=checkbox], input[type=range], input[type=file] { cursor: url(/cursors/target.svg) 16 16, pointer; }
+  input:not([type=checkbox]):not([type=range]):not([type=file]), textarea, [contenteditable] { cursor: text; }
+  button:disabled, [aria-disabled=true] { cursor: not-allowed; }
+  .cm-viewer canvas { cursor: url(/cursors/cross.svg) 16 16, crosshair; }
+  .cm-viewer canvas:active { cursor: grabbing; }
+}
+.cm-ring { position: fixed; left: 0; top: 0; z-index: 90; pointer-events: none; opacity: 0; transition: opacity .2s; }
+.cm-ring[data-on="1"] { opacity: 1; }
+.cm-ring[data-hide="1"], .cm-ring[data-view="1"] { opacity: 0; }
+.cm-ring span { position: absolute; left: -17px; top: -17px; width: 34px; height: 34px; border: 1px solid color-mix(in srgb, var(--ink) 50%, transparent); border-radius: 50%;
+  transition: transform .28s cubic-bezier(.2, .8, .2, 1), border-color .2s, background-color .2s; }
+.cm-ring[data-hot="1"] span { transform: scale(1.5); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.cm-ring[data-down="1"] span { transform: scale(.75); }
+
+/* menú contextual */
+@keyframes menu-in { from { opacity: 0; transform: translateY(-3px) scale(.98); } }
+.cm-menu { animation: menu-in .12s ease-out; transform-origin: top left; }
+.cm-menu [role=menuitem]:focus-visible { outline: none; background: color-mix(in srgb, var(--ink) 10%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+
+/* mascota: respira, parpadea, saluda y martillea (nada si se pide menos movimiento) */
+@keyframes g-breathe { 50% { transform: translateY(2px); } }
+@keyframes g-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+@keyframes g-wave { 0%, 100% { transform: rotate(-150deg); } 50% { transform: rotate(-120deg); } }
+@keyframes g-hammer { 0%, 100% { transform: rotate(-60deg); } 45% { transform: rotate(10deg); } 55% { transform: rotate(6deg); } }
+@keyframes g-sway { 50% { transform: rotate(3deg); } }
+.golem .g-body { animation: g-breathe 3.2s ease-in-out infinite; }
+.golem .g-eyes { animation: g-blink 4.6s infinite; }
+.golem .g-wave { animation: g-wave 1.1s ease-in-out infinite; }
+.golem .g-hammer { animation: g-hammer .9s cubic-bezier(.5, 0, .3, 1) infinite; }
+.golem .g-head { animation: g-sway 5s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .golem * { animation: none !important; } }

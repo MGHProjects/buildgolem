@@ -1,0 +1,36 @@
+modLoader="javafml"
+loaderVersion="${loader_version_range}"
+license="${mod_license}"
+issueTrackerURL="https://buildgolem.dualix.io"
+
+[[mods]]
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+displayURL="https://buildgolem.dualix.io"
+authors="MGH Projects"
+description='''
+The Builder Golem: a hard-hatted iron golem that builds your BuildGolem designs on its own, at player speed, taking the blocks from up to 5 chests you assign with the Chest Binder.
+Needed on the server and on every client. Copying a hologram into a Blueprint needs BuildGolem Link on the client.
+'''
+
+[[dependencies.${mod_id}]]
+    modId="neoforge"
+    type="required"
+    versionRange="[${neo_version},)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="minecraft"
+    type="required"
+    versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="buildgolem_link"
+    type="optional"
+    versionRange="[1.2.0,)"
+    ordering="AFTER"
+    side="CLIENT"

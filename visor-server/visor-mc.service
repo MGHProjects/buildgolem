@@ -1,0 +1,18 @@
+[Unit]
+Description=Visor de diseños de Minecraft (tokens por usuario, libre en la red de casa)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=claude
+WorkingDirectory=/home/claude/visor-mc
+Environment=PORT=8097 HOST=0.0.0.0 PUBLIC_URL=https://visor-minecraft.dualix.io
+ExecStart=/usr/bin/node server.mjs
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/claude/visor-mc
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

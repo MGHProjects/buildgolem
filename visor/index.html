@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visor de diseños</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&display=swap">
+<link rel="stylesheet" href="app/style.css">
+</head>
+<body>
+<div id="view"></div>
+<aside id="panel"><p class="sub">Cargando…</p></aside>
+<aside id="inspector" hidden></aside>
+<aside id="guide" hidden></aside>
+<div id="tip" hidden></div>
+<div id="slottip" hidden></div>
+<script type="importmap">{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }</script>
+<script type="module" src="app/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    " H ",
+    "ICI",
+    "IVI"
+  ],
+  "key": {
+    "H": {
+      "item": "buildgolem:hard_hat"
+    },
+    "C": {
+      "item": "buildgolem:golem_core"
+    },
+    "V": {
+      "item": "buildgolem:hi_vis_vest"
+    },
+    "I": {
+      "item": "minecraft:iron_block"
+    }
+  },
+  "result": {
+    "id": "buildgolem:builder_golem",
+    "count": 1
+  }
+}

@@ -1,0 +1,86 @@
+/* Motor 3D dentro de la app (estilo plano): lienzo, ficha flotante, etiqueta, guía y las piezas del diseño
+   (explicación, patrones, canales) que la interfaz coloca en su panel lateral (.cm-panel). */
+:where(.cm-viewer, .cm-panel) {
+  --panel: color-mix(in srgb, var(--surface, #0e2338) 95%, transparent);
+  --mute: var(--muted, #9db4cc); --txt: var(--fg, #e6f0fa); --acc: var(--accent-ink, #f0a072); --hi: var(--ink, #8fc1ec); --ln: var(--line, #24476b);
+  --mc-bg: #c6c6c6; --mc-slot: #8b8b8b; --mc-dark: #373737; --mc-light: #fff; --mc-text: #404040;
+}
+.cm-viewer { overflow: hidden; color: var(--txt); font: 13px/1.45 var(--font-sans, 'Geist Variable', system-ui, sans-serif); }
+.cm-viewer canvas { display: block; }
+.cm-viewer #view { position: absolute; inset: 0; }
+.cm-viewer aside { position: absolute; top: 12px; max-height: calc(100% - 24px); overflow: auto; background: var(--panel); border: 1px solid var(--ln);
+  border-radius: 4px; padding: 14px; box-sizing: border-box; box-shadow: 0 16px 40px -20px rgb(2 10 20 / .8); }
+.cm-viewer #inspector { right: 12px; width: 420px; max-width: calc(100% - 24px); }
+.cm-viewer #guide { right: 12px; width: 400px; max-width: calc(100% - 24px); }
+.cm-viewer #inspector:not([hidden]) ~ #guide { right: 444px; }
+.cm-viewer aside[hidden], .cm-viewer #tip[hidden], .cm-viewer #slottip[hidden] { display: none; }
+.cm-viewer button.close { float: right; margin: -6px -6px 0 8px; width: 32px; height: 32px; padding: 0; font-size: 18px; line-height: 30px; }
+.cm-viewer #tip { position: fixed; pointer-events: none; z-index: 20; max-width: 360px; background: var(--panel); border: 1px solid var(--ln); border-radius: 4px; padding: 8px 10px; }
+.cm-viewer #guide ol { padding-left: 18px; } .cm-viewer #guide li { margin: 0 0 6px; }
+@media (max-width: 760px) { .cm-viewer #inspector, .cm-viewer #guide { top: auto; bottom: 12px; left: 12px; right: 12px; width: auto; max-height: 55%; } }
+
+/* piezas compartidas */
+:where(.cm-viewer, .cm-panel) h1 { font-size: 15px; margin: 6px 0 2px; }
+:where(.cm-viewer, .cm-panel) h2 { font-size: 13px; font-weight: 600; color: var(--txt); margin: 16px 0 6px; }
+:where(.cm-viewer, .cm-panel) .sub, :where(.cm-viewer, .cm-panel) .hint { color: var(--mute); font-size: 12px; margin: 4px 0; }
+:where(.cm-viewer, .cm-panel) b { color: var(--acc); font-weight: 600; }
+:where(.cm-viewer, .cm-panel) button { background: transparent; color: var(--txt); border: 1px solid var(--ln); border-radius: 4px; padding: 6px 10px; margin: 0 4px 4px 0; cursor: pointer; font: inherit; }
+:where(.cm-viewer, .cm-panel) button:hover { border-color: var(--hi); background: color-mix(in srgb, var(--hi) 8%, transparent); }
+:where(.cm-viewer, .cm-panel) label { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+:where(.cm-viewer, .cm-panel) input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent, #E07A3F); }
+:where(.cm-viewer, .cm-panel) select { background: var(--surface, #0e2338); color: var(--txt); border: 1px solid var(--ln); border-radius: 4px; padding: 5px 6px; font: inherit; min-width: 0; flex: 1; cursor: pointer; }
+:where(.cm-viewer, .cm-panel) .tbl { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+:where(.cm-viewer, .cm-panel) .tbl td { padding: 4px 0; border-bottom: 1px solid color-mix(in srgb, var(--ln) 60%, transparent); }
+:where(.cm-viewer, .cm-panel) .tbl td:last-child { text-align: right; color: var(--acc); font: 500 12px var(--font-mono, ui-monospace, monospace); }
+:where(.cm-viewer, .cm-panel) .tbl thead td { color: var(--mute); }
+:where(.cm-viewer, .cm-panel) .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+:where(.cm-viewer, .cm-panel) .gmap { width: 100%; image-rendering: pixelated; border-radius: 4px; margin-top: 6px; }
+:where(.cm-viewer, .cm-panel) .warn { color: #ff8a7a; }
+:where(.cm-viewer, .cm-panel) .cm-info p, :where(.cm-viewer, .cm-panel) .cm-info ol, :where(.cm-viewer, .cm-panel) .cm-info ul { margin: 0 0 10px; line-height: 1.55; }
+:where(.cm-viewer, .cm-panel) .cm-info ol, :where(.cm-viewer, .cm-panel) .cm-info ul { padding-left: 18px; } :where(.cm-viewer, .cm-panel) .cm-info li { margin: 0 0 6px; }
+:where(.cm-viewer, .cm-panel) .provs { display: grid; gap: 6px; }
+:where(.cm-viewer, .cm-panel) .prov { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; margin: 0; text-align: left; padding: 8px; }
+:where(.cm-viewer, .cm-panel) .prov-name { display: flex; flex-direction: column; } :where(.cm-viewer, .cm-panel) .prov-name small { color: var(--mute); font: 11px var(--font-mono, monospace); }
+:where(.cm-viewer, .cm-panel) .prov-pats { display: flex; gap: 2px; flex-wrap: wrap; justify-content: flex-end; }
+:where(.cm-viewer, .cm-panel) .prov .mc-slot { width: 30px; height: 30px; } :where(.cm-viewer, .cm-panel) .prov .mc-slot img { width: 24px; height: 24px; }
+:where(.cm-viewer, .cm-panel) .card { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; } :where(.cm-viewer, .cm-panel) .card small { color: var(--mute); display: block; font: 11px var(--font-mono, monospace); }
+:where(.cm-viewer, .cm-panel) .card-head b { font-size: 14px; color: var(--txt); }
+:where(.cm-viewer, .cm-panel) .card-note { margin: 0; color: color-mix(in srgb, var(--txt) 85%, var(--mute)); } :where(.cm-viewer, .cm-panel) .card-hint { margin: 0; color: var(--hi); font-size: 12px; }
+:where(.cm-viewer, .cm-panel) .card-sub { color: var(--mute); font-size: 12px; font-weight: 600; margin-top: 4px; }
+:where(.cm-viewer, .cm-panel) .steps { margin: 0; padding-left: 18px; } :where(.cm-viewer, .cm-panel) .steps li { margin: 0 0 5px; }
+
+/* ── ventanas al estilo AE2 / Minecraft ── */
+:where(.cm-viewer, .cm-panel) .mc-win { background: var(--mc-bg); color: var(--mc-text); border: 2px solid; border-color: var(--mc-light) #555 #555 var(--mc-light);
+  box-shadow: 0 0 0 2px #000; border-radius: 3px; padding: 8px 10px 10px; font-family: 'Pixelify Sans', system-ui, sans-serif; width: fit-content; max-width: 100%; box-sizing: border-box; }
+:where(.cm-viewer, .cm-panel) .mc-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+:where(.cm-viewer, .cm-panel) .mc-name { font-size: 14px; color: var(--mc-text); }
+:where(.cm-viewer, .cm-panel) .mc-ico { width: 24px; height: 24px; image-rendering: pixelated; }
+:where(.cm-viewer, .cm-panel) .mc-sub { font-size: 12px; color: #5a5a5a; margin: 2px 0 3px; display: block; }
+:where(.cm-viewer, .cm-panel) .mc-tabs { display: flex; gap: 2px; margin-bottom: 6px; }
+:where(.cm-viewer, .cm-panel) .mc-tabs span { font-size: 12px; padding: 2px 8px; background: #a8a8a8; border: 2px solid; border-color: #dbdbdb #5e5e5e #5e5e5e #dbdbdb; color: #5a5a5a; }
+:where(.cm-viewer, .cm-panel) .mc-tabs span.on { background: var(--mc-bg); color: var(--mc-text); border-color: var(--mc-light) #555 #555 var(--mc-light); }
+:where(.cm-viewer, .cm-panel) .mc-row { display: flex; align-items: center; gap: 8px; }
+:where(.cm-viewer, .cm-panel) .mc-grid { display: grid; grid-template-columns: repeat(3, 36px); }
+:where(.cm-viewer, .cm-panel) .mc-col, :where(.cm-viewer, .cm-panel) .mc-line { display: flex; } .mc-col { flex-direction: column; } .mc-line { flex-wrap: wrap; }
+:where(.cm-viewer, .cm-panel) .mc-arrow { display: inline-flex; }
+:where(.cm-viewer, .cm-panel) .mc-slot { width: 36px; height: 36px; box-sizing: border-box; background: var(--mc-slot); border: 2px solid; border-color: var(--mc-dark) var(--mc-light) var(--mc-light) var(--mc-dark);
+  position: relative; display: inline-flex; align-items: center; justify-content: center; }
+:where(.cm-viewer, .cm-panel) .mc-slot img { width: 32px; height: 32px; image-rendering: pixelated; }
+:where(.cm-viewer, .cm-panel) .mc-slot b { position: absolute; right: 1px; bottom: -1px; color: #fff; font: 600 13px/1 'Pixelify Sans', monospace; text-shadow: 2px 2px 0 #3f3f3f; pointer-events: none; }
+:where(.cm-viewer, .cm-panel) .mc-slot.big { width: 52px; height: 52px; } .mc-slot.big img { width: 40px; height: 40px; }
+:where(.cm-viewer, .cm-panel) .mc-slot[data-tip]:hover { background: #a5a5a5; }
+:where(.cm-viewer, .cm-panel) .mc-slot.encoded { background: #9a8fb0; }
+:where(.cm-viewer, .cm-panel) .mc-badge { position: absolute; left: -2px; top: -2px; width: 14px !important; height: 14px !important; }
+:where(.cm-viewer, .cm-panel) .mc-pattern.compact .mc-slot { width: 30px; height: 30px; } .mc-pattern.compact .mc-slot img { width: 24px; height: 24px; }
+:where(.cm-viewer, .cm-panel) .mc-pattern.compact .mc-grid { grid-template-columns: repeat(3, 30px); } .mc-pattern.compact .mc-slot.big { width: 42px; height: 42px; }
+:where(.cm-viewer, .cm-panel) .mc-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+:where(.cm-viewer, .cm-panel) .mc-chip { font-size: 12px; padding: 1px 6px; background: #b0b0b0; border: 1px solid #7a7a7a; }
+:where(.cm-viewer, .cm-panel) .mc-chip.on { background: #6d9b4f; color: #fff; border-color: #3f6a2a; }
+:where(.cm-viewer, .cm-panel) .mc-slots { display: grid; gap: 4px; }
+:where(.cm-viewer, .cm-panel) .mc-lab { display: flex; gap: 8px; align-items: center; margin: 0; font-size: 13px; color: var(--mc-text); }
+:where(.cm-viewer, .cm-panel) .mc-lab small { display: block; color: #5f5f5f; font-size: 12px; }
+:where(.cm-viewer, .cm-panel) .mc-cards { margin-top: 6px; }
+:where(.cm-viewer, .cm-panel) .mc-set { margin: 6px 0 0; padding-left: 16px; font-size: 13px; } .mc-set li { margin: 0 0 3px; } .mc-set b { color: #1d4e89; }
+/* nombre de objeto al pasar por un hueco: tooltip de Minecraft */
+:where(.cm-viewer, .cm-panel) #slottip { position: fixed; pointer-events: none; z-index: 30; background: rgba(16, 0, 16, .94); color: #fff; padding: 3px 6px;
+  border: 2px solid #28005e; outline: 1px solid #100010; font: 14px/1.2 'Pixelify Sans', system-ui, sans-serif; white-space: nowrap; }
