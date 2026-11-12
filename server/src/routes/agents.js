@@ -49,6 +49,8 @@ agents.post('/designs/:id/chat', async c => {
   const ac = new AbortController();
   return streamSSE(c, async stream => {
     stream.onAbort(() => ac.abort());
+    // latido (comentario SSE, el cliente lo ignora): Cloudflare corta un flujo que pasa ~100 s sin datos y un modelo lento puede pensar más
+    const ping = setInterval(() => stream.write(': ping\n\n').catch(() => {}), 25_000);
     const emit = ev => { stream.writeSSE({ data: JSON.stringify(ev) }).catch(() => {}); if (ev.type === 'tool' && ev.name === 'edit_design') pendingReload = true; };
     let pendingReload = false;
     try {
@@ -63,6 +65,6 @@ agents.post('/designs/:id/chat', async c => {
       await stream.writeSSE({ data: JSON.stringify({ type: 'done', reload: pendingReload }) });
     } catch (e) {
       await stream.writeSSE({ data: JSON.stringify({ type: 'error', text: String(e.message || e).slice(0, 400) }) });
-    } finally { running.delete(u.id); }
+    } finally { clearInterval(ping); running.delete(u.id); }
   });
 });

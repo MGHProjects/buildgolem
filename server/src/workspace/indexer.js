@@ -70,6 +70,13 @@ function loadModel(pack, ref) {
 }
 
 // variante por defecto de un blockstate y la rotación de su variante facing=north (para orientar el modelo)
+// dónde está cada archivo que se lee después: texturas, modelos y estados para el visor, y recetas para los agentes (search_recipes)
+export function fileIndex(pack, dir) {
+  const files = {};
+  for (const [k, [ji, e]] of pack.files) if (/^assets\/[^/]+\/(textures\/.+\.png(\.mcmeta)?|models\/.+\.json|blockstates\/.+\.json)$|^data\/[^/]+\/recipes?\/.+\.json$/.test(k)) files[k] = e.file ? [ji, -1, 0, 0, -1, relative(dir, e.file)] : [ji, e.offset, e.csize, e.usize, e.method];
+  return files;
+}
+
 function defaultVariant(bs) {
   if (bs?.variants) {
     const entries = Object.entries(bs.variants), pick = v => (Array.isArray(v) ? v[0] : v);
@@ -132,8 +139,7 @@ export function buildIndex(dir, jars, onProgress = () => {}) {
   }
   onProgress('Licencias');
   const licenses = modLicenses(jars);
-  const files = {};
-  for (const [k, [ji, e]] of pack.files) if (/^assets\/[^/]+\/(textures\/.+\.png(\.mcmeta)?|models\/.+\.json|blockstates\/.+\.json)$/.test(k)) files[k] = e.file ? [ji, -1, 0, 0, -1, relative(dir, e.file)] : [ji, e.offset, e.csize, e.usize, e.method];
+  const files = fileIndex(pack, dir);
   mkdirSync(join(dir, 'index'), { recursive: true });
   const w = (n, v) => writeFileSync(join(dir, 'index', n), JSON.stringify(v));
   w('blocks.json', blocks); w('recipes.json', recipes); w('tags.json', tags); w('licenses.json', licenses); w('files.json', { jars: jars.map(j => relative(dir, j)), files });

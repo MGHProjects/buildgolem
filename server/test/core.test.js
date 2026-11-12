@@ -71,11 +71,12 @@ test('validación: un bloque de 2 de alto choca con lo que tiene encima', () => 
 
 test('nbt: estructura con paleta, tamaño y bloques', () => {
   const { file, size, skipped } = toStructureNbt({ P: { a: { id: 'minecraft:stone' }, b: { id: 'ae2:fluix_covered_dense_cable' } }, BLOCKS: [{ x: 5, y: 1, z: 5, t: 'a' }, { x: 6, y: 1, z: 5, t: 'a' }, { x: 7, y: 1, z: 5, t: 'b' }] });
-  assert.deepEqual(size, [2, 1, 1]);
-  assert.equal(skipped['ae2:fluix_covered_dense_cable'], 1);
+  assert.deepEqual(size, [3, 1, 1]);
+  assert.deepEqual(skipped, {});
   const raw = gunzipSync(file);
   assert.equal(raw[0], 10);                                                       // compuesto raíz
   assert.ok(raw.includes(Buffer.from('minecraft:stone')));
+  assert.ok(raw.includes(Buffer.from('ae2:cable_bus')) && raw.includes(Buffer.from('ae2:fluix_covered_dense_cable'))); // el cable va dentro de un cable bus
 });
 
 test('zip: lista y lee entradas (deflate) y rechaza rutas peligrosas', () => {
@@ -96,6 +97,55 @@ test('zip: lista y lee entradas (deflate) y rechaza rutas peligrosas', () => {
 test('protocolo JSON: saca el objeto aunque venga con texto alrededor', () => {
   assert.deepEqual(extractJson('Vale. {"tool": "calc", "args": {"expr": "1+1"}} listo'), { tool: 'calc', args: { expr: '1+1' } });
   assert.equal(extractJson('sin json'), null);
+});
+
+test('paneles AE2: se giran hacia la máquina que tocan y la validación avisa si no tocan nada', async () => {
+  const { runTool } = await import('../src/llm/tools.js');
+  const P = { fac: { n: 'Factoría', id: 'mekanism:elite_enriching_factory', yaw: 180, tier: { tier: 'elite' } }, cab: { n: 'Cable', id: 'ae2:cable_bus' } };
+  const BLOCKS = [{ x: 1, y: 0, z: 0, t: 'fac', f: 's' }, ...[0, 1, 2].map(x => ({ x, y: 1, z: 0, t: 'cab', f: 's' }))];
+  const ctx = { design: encode({ P, BLOCKS, TERMS: [], W: 3, H: 2 }), saveDesign() {} };
+  const out = JSON.parse(await runTool('edit_design', { ops: [
+    { op: 'part', x: 1, y: 1, z: 0, side: 'west', part: 'ae2:pattern_provider' },   // forma de bloque y mirando al cable de al lado, como hizo DeepSeek
+    { op: 'place', x: 0, y: 0, z: 0, block: 'minecraft:stone', facing: 'arriba' },    // falla sola y las demás siguen
+    { op: 'place', x: 3, y: 1, z: 0, block: 'ae2:cable_bus' },                        // un cable no es un bloque: celda de cable a la vista
+  ] }, ctx));
+  const m = decode(ctx.design);
+  assert.deepEqual(m.TERMS.map(t => [t.x, t.y, t.z, m.P[t.t].id, t.f]), [[1, 1, 0, 'ae2:cable_pattern_provider', 'd']]);
+  assert.match(out.failed[0].error, /facing/);
+  assert.match(out.notes.join(' '), /girado a down/);
+  const c = m.BLOCKS.find(b => b.x === 3 && b.y === 1);
+  assert.ok(c.cable && m.P[c.t].shape === 'post');
+  assert.ok(validateModel(m).ok);
+  m.TERMS.push({ x: 0, y: 1, z: 0, t: m.TERMS[0].t, f: 'w' });                       // en el extremo, sin máquina: no hay a dónde girarlo
+  assert.match(validateModel(m).errors[0].msg, /mira a west y ahí hay aire/);
+});
+
+test('agentes: sin razonamiento en el texto y preguntas escritas como texto = ask_user', async () => {
+  const { runAgent, cleanText } = await import('../src/llm/agent.js');
+  assert.equal(cleanText('<think>planeo</think>Hola'), 'Hola');
+  assert.equal(cleanText('pienso…</thought>\nHola'), 'Hola');
+  const seen = [];
+  const ctx = { key: { toolMode: 'native' }, lang: 'es', design: encode({ P: {}, BLOCKS: [], W: 1, H: 1 }), saveDesign() {},
+    chat: async ({ messages }) => { seen.push(messages[0].content); return { text: '<think>no sé</think>{"questions":[{"question":"¿Energía?","options":["La traigo yo"]}]}', toolCalls: [] }; } };
+  const r = await runAgent('orchestrator', [{ role: 'user', content: 'Haz una fábrica' }], ctx, () => {});
+  assert.deepEqual(r.asked, [{ question: '¿Energía?', options: ['La traigo yo'] }]);
+  assert.match(seen[0], /Condiciones del diseño/);                                 // ask-constraints ya va en el prompt
+  assert.doesNotMatch(seen[0], /json-protocol/);
+});
+
+test('Gemini 3: la firma de cada llamada a herramienta vuelve en el mensaje siguiente', async () => {
+  const { chat } = await import('../src/llm/providers.js');
+  const sent = [], real = globalThis.fetch, extra = { google: { thought_signature: 'firma' } };
+  globalThis.fetch = async (url, o) => {
+    sent.push(JSON.parse(o.body));
+    return new Response(JSON.stringify({ choices: [{ message: { content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read_skill', arguments: '{"name":"ae2"}' }, extra_content: extra }] } }] }), { status: 200 });
+  };
+  try {
+    const key = { provider: 'custom', baseUrl: 'https://8.8.8.8/v1', apiKey: 'x', model: 'm' };   // IP pública: sin DNS en la prueba
+    const r = await chat({ ...key, messages: [{ role: 'user', content: 'hola' }], tools: [{ name: 'read_skill', description: 'd', parameters: { type: 'object', properties: {} } }] });
+    await chat({ ...key, messages: [{ role: 'user', content: 'hola' }, { role: 'assistant', content: r.text, toolCalls: r.toolCalls }, { role: 'tool', toolCallId: 'c1', content: 'guía' }] });
+    assert.deepEqual(sent[1].messages[1].tool_calls[0].extra_content, extra);
+  } finally { globalThis.fetch = real; }
 });
 
 test('color medio de un PNG', () => {

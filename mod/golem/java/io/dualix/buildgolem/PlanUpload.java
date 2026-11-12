@@ -4,7 +4,17 @@ package io.dualix.buildgolem;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.arguments.blocks.BlockStateParser;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.HolderGetter;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtUtils;
+import net.minecraft.nbt.Tag;
+import net.minecraft.nbt.TagParser;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.ByteBufCodecs;
@@ -33,7 +43,9 @@ import java.util.zip.InflaterInputStream;
  * Todo lo que llega del cliente se valida: tamaño, número de trozos, medidas, distancia y que lleve un plano en blanco.
  */
 public record PlanUpload(long nonce, int index, int total, boolean offhand, byte[] data) implements CustomPacketPayload {
-    public static final int CHUNK = 30_000, MAX_CHUNKS = 160, MAX_BLOCKS = 262_144, MAX_SIDE = 512, MAX_PALETTE = 4096, MAX_RAW = 8 << 20, VERSION = 1;
+    public static final int CHUNK = 30_000, MAX_CHUNKS = 160, MAX_BLOCKS = 262_144, MAX_SIDE = 512, MAX_PALETTE = 4096, MAX_RAW = 8 << 20, VERSION = 2;
+    /** Claves de pieza de un cable de AE2: el cable del centro y las seis caras. */
+    private static final String[] PART_KEYS = { "cable", "down", "up", "north", "south", "west", "east" };
     public static final Type<PlanUpload> TYPE = new Type<>(BuildGolem.id("plan_upload"));
     public static final StreamCodec<RegistryFriendlyByteBuf, PlanUpload> STREAM_CODEC = StreamCodec.composite(
         ByteBufCodecs.VAR_LONG, PlanUpload::nonce,
@@ -46,8 +58,8 @@ public record PlanUpload(long nonce, int index, int total, boolean offhand, byte
     @Override
     public Type<? extends CustomPacketPayload> type() { return TYPE; }
 
-    /** Lo que manda el cliente, antes de comprimir y trocear. */
-    public record Draft(String title, String dimension, BlockPos anchor, BlockPos size, String[] palette, int[] dx, int[] dy, int[] dz, int[] idx) {}
+    /** Lo que manda el cliente, antes de comprimir y trocear. data: SNBT de cada entrada de la paleta ("" si no lleva). */
+    public record Draft(String title, String dimension, BlockPos anchor, BlockPos size, String[] palette, String[] data, int[] dx, int[] dy, int[] dz, int[] idx) {}
 
     public static byte[] encode(Draft d) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -58,7 +70,7 @@ public record PlanUpload(long nonce, int index, int total, boolean offhand, byte
             out.writeLong(d.anchor().asLong());
             out.writeLong(d.size().asLong());
             out.writeInt(d.palette().length);
-            for (String s : d.palette()) out.writeUTF(s);
+            for (int i = 0; i < d.palette().length; i++) { out.writeUTF(d.palette()[i]); out.writeUTF(d.data()[i] == null ? "" : d.data()[i]); }
             out.writeInt(d.idx().length);
             for (int i = 0; i < d.idx().length; i++) { out.writeShort(d.dx()[i]); out.writeShort(d.dy()[i]); out.writeShort(d.dz()[i]); out.writeShort(d.idx()[i]); }
         }
@@ -117,7 +129,8 @@ public record PlanUpload(long nonce, int index, int total, boolean offhand, byte
         if (!blank.is(Content.BLANK_BLUEPRINT.get())) { player.sendSystemMessage(Component.translatable("buildgolem.msg.noblank")); return; }
         Plan plan = new Plan();
         try (DataInputStream in = new DataInputStream(new Capped(new InflaterInputStream(new ByteArrayInputStream(blob))))) {
-            if (in.readInt() != VERSION) throw new IOException("versión de plano desconocida");
+            int version = in.readInt();
+            if (version != 1 && version != VERSION) throw new IOException("versión de plano desconocida");
             plan.title = clip(in.readUTF(), 80);
             plan.dimension = in.readUTF();
             plan.anchor = BlockPos.of(in.readLong());
@@ -128,15 +141,18 @@ public record PlanUpload(long nonce, int index, int total, boolean offhand, byte
             if (np < 1 || np > MAX_PALETTE) throw new IOException("paleta fuera de rango");
             var blocks = player.serverLevel().holderLookup(Registries.BLOCK);
             int[] remap = new int[np];
-            Map<BlockState, Integer> seen = new HashMap<>();
+            record Key(BlockState state, CompoundTag data) {}
+            Map<Key, Integer> seen = new HashMap<>();
             for (int i = 0; i < np; i++) {
-                String s = clip(in.readUTF(), 1024);
+                String s = clip(in.readUTF(), 1024), snbt = version >= 2 ? in.readUTF() : "";
                 BlockState st;
                 try { st = Plan.sanitize(BlockStateParser.parseForBlock(blocks, s, false).blockState()); }
                 catch (CommandSyntaxException ex) { st = null; }           // bloque de un mod que el servidor no tiene: se salta
                 if (st == null || st.isAir()) { remap[i] = -1; continue; }
-                Integer at = seen.get(st);
-                if (at == null) { at = plan.palette.size(); plan.palette.add(st); seen.put(st, at); }
+                CompoundTag data = sanitizeData(st, snbt, blocks);
+                Key key = new Key(st, data);
+                Integer at = seen.get(key);
+                if (at == null) { at = plan.palette.size(); plan.palette.add(st); plan.data.add(data); seen.put(key, at); }
                 remap[i] = at;
             }
             int n = in.readInt();
@@ -171,4 +187,31 @@ public record PlanUpload(long nonce, int index, int total, boolean offhand, byte
     }
 
     private static String clip(String s, int max) { return s.length() <= max ? s : s.substring(0, max); }
+
+    /**
+     * Lo que llega del cliente no es de fiar: solo los cables de AE2 llevan datos, y de ellos solo qué objeto va en cada
+     * cara ({id}, que el gólem paga con ese objeto) y qué bloque imita cada fachada ({Name, Properties}, pagada con una
+     * fachada). Nada más pasa: ni inventarios, ni configuraciones, ni claves desconocidas.
+     */
+    static CompoundTag sanitizeData(BlockState st, String snbt, HolderGetter<Block> blocks) {
+        if (snbt.isEmpty() || snbt.length() > 4096 || !"ae2:cable_bus".equals(BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString())) return null;
+        CompoundTag in;
+        try { in = TagParser.parseTag(snbt); } catch (CommandSyntaxException e) { return null; }
+        CompoundTag out = new CompoundTag();
+        for (String k : PART_KEYS) {
+            if (!in.contains(k, Tag.TAG_COMPOUND)) continue;
+            ResourceLocation rl = ResourceLocation.tryParse(in.getCompound(k).getString("id"));
+            if (rl == null || !BuiltInRegistries.ITEM.containsKey(rl) || BuiltInRegistries.ITEM.get(rl) == Items.AIR) continue;
+            CompoundTag part = new CompoundTag();
+            part.putString("id", rl.toString());
+            out.put(k, part);
+        }
+        for (Direction d : Direction.values()) {
+            String k = "facade" + Character.toUpperCase(d.getName().charAt(0)) + d.getName().substring(1);
+            if (!in.contains(k, Tag.TAG_COMPOUND)) continue;
+            BlockState fs = NbtUtils.readBlockState(blocks, in.getCompound(k));
+            if (!fs.isAir() && !fs.hasBlockEntity()) out.put(k, NbtUtils.writeBlockState(fs));
+        }
+        return out.isEmpty() ? null : out;
+    }
 }

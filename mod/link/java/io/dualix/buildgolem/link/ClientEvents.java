@@ -37,6 +37,7 @@ final class ClientEvents {
         Projection p = Projection.active;
         if (p != null && p.anchor != null && (++ticks % 5 == 0 || p.fresh)) {
             p.scan(mc.level, mc.player.blockPosition());
+            Builder.afterScan(p);
             if (LinkConfig.AUTO_NEXT_LAYER.get() && p.layerDone() && p.layer < p.sizeY - 1) {
                 Actions.layer(p.layer + 1);
                 Actions.say(Actions.t("layer.next", p.layer + 1, p.sizeY));
@@ -60,6 +61,7 @@ final class ClientEvents {
         d.register(Commands.literal("buildgolem")
             .executes(c -> run(() -> Minecraft.getInstance().setScreen(new LinkScreen())))
             .then(Commands.literal("menu").executes(c -> run(() -> Minecraft.getInstance().setScreen(new LinkScreen()))))
+            .then(Commands.literal("options").executes(c -> run(() -> Minecraft.getInstance().setScreen(new OptionsScreen(null)))))
             .then(Commands.literal("unlink").executes(c -> run(() -> { LinkConfig.unlink(); Actions.say(Actions.t("unlinked")); })))
             .then(Commands.literal("designs").executes(c -> run(ClientEvents::listDesigns)))
             .then(Commands.literal("load").then(Commands.argument("id", StringArgumentType.word())

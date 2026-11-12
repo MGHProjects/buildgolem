@@ -1,11 +1,17 @@
 // SPDX-License-Identifier: MIT
 package io.dualix.buildgolem;
 
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.GlobalPos;
+import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -19,7 +25,10 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.AABB;
@@ -30,35 +39,50 @@ import net.neoforged.neoforge.event.EventHooks;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.ItemHandlerHelper;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.BitSet;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
- * El trabajo del gólem. Recorre el plano de abajo arriba buscando el siguiente bloque que falta; si no lo lleva, va al
- * cofre asignado que lo tenga y coge lo que va a necesitar pronto; luego camina hasta tenerlo a mano y lo pone
- * (un bloque cada 12 ticks, como un jugador con calma). Nunca rompe nada: un hueco ocupado por otro bloque se salta.
- * Si se atasca 4 s, salta a un sitio firme junto al objetivo. Al terminar devuelve lo que sobra a un cofre.
+ * El trabajo del gólem. Repasa el plano sin parar (miles de bloques por tick, una vuelta cada 2 s como mucho) y apunta
+ * lo que falta, lo que está girado y los cables a los que les faltan piezas: si alguien rompe un bloque ya puesto, lo
+ * vuelve a poner. Elige lo más cercano (con preferencia por lo de abajo) y pone todo lo que tiene al alcance antes de
+ * caminar. Si no lleva el material va al cofre que lo tenga y se trae lo de esa zona. Nunca rompe nada: un hueco ocupado
+ * por otro bloque se salta, y en un cable solo añade piezas en caras libres. Si se atasca 4 s, salta a un sitio firme.
  */
 final class BuildGoal extends Goal {
-    private static final int PLACE_EVERY = 12, SCAN_BUDGET = 4096, AHEAD = 2048;
-    private static final double REACH = 4.5, CHEST_REACH = 2.6, SPEED = 1.0;
+    private static final int SCAN_BUDGET = 8192, PASS_MIN = 40, CELL = 3;   // celdas de 8³ para encontrar rápido lo que hay al alcance
+    private static final double CHEST_REACH = 2.6, NEAR_CHESTS = 4.5, SPEED = 1.0, LAYER_W = 3.0, DETOUR = 24;
+    static final byte UNKNOWN = 0, OK = 1, MISSING = 2, PARTIAL = 3, TURNED = 4, BLOCKED = 5, UNLOADED = 6;
+    /** Propiedades que el gólem endereza sin gastar nada (como una llave inglesa). */
+    private static final Property<?>[] TURN = { BlockStateProperties.HORIZONTAL_FACING, BlockStateProperties.FACING, BlockStateProperties.FACING_HOPPER,
+        BlockStateProperties.AXIS, BlockStateProperties.HORIZONTAL_AXIS, BlockStateProperties.HALF, BlockStateProperties.HANGING,
+        BlockStateProperties.ROTATION_16, BlockStateProperties.ORIENTATION };
 
     private enum Job { NONE, PLACE, FETCH, RETURN }
+    private record Taken(CompoundTag tag, List<ItemStack> spent) {}
 
     private final BuilderGolem g;
     private Job job = Job.NONE;
-    private int target = -1, scan, cooldown, repath, bestAt, blocked;
-    /** Bloques que ya están bien: los vistos en la vuelta anterior más los puestos desde entonces (para el %). */
-    private int known, passBase, doneSeen;
-    private boolean progress;
+    private Plan lastPlan;
+    private byte[] st = new byte[0];
+    private final int[] cnt = new int[7];
+    private final BitSet need = new BitSet(), skip = new BitSet(), gaveUp = new BitSet();
+    private final Map<Integer, CompoundTag> partsMissing = new HashMap<>();
+    /** Objetos que no están ni encima ni en los cofres (hasta la próxima vuelta): lo que los pide no se elige. */
+    private final java.util.Set<Item> noStock = new java.util.HashSet<>();
+    private Long2ObjectOpenHashMap<IntArrayList> cells = new Long2ObjectOpenHashMap<>();
+    private int scan, passStart, target = -1, cooldown, repath, bestAt, lowY;
+    private boolean passDone, announced = true, returned;
     private BlockPos goal;
     private double best;
-    private boolean announced = true, returned;
-    private Plan lastPlan;
-    private final BitSet deferred = new BitSet();
-    private final Map<Item, Integer> missing = new LinkedHashMap<>();
 
     BuildGoal(BuilderGolem g) {
         this.g = g;
@@ -82,6 +106,7 @@ final class BuildGoal extends Goal {
         g.getNavigation().stop();
         job = Job.NONE;
         g.setCarry(ItemStack.EMPTY);
+        if (g.mood() == BuilderGolem.WORK) g.setMood(BuilderGolem.IDLE);
         if (g.hasPlan()) g.setReading(true);
     }
 
@@ -89,10 +114,11 @@ final class BuildGoal extends Goal {
     public void tick() {
         ServerLevel sl = (ServerLevel) g.level();
         Plan plan = g.plan();
-        if (plan != lastPlan) { lastPlan = plan; scan = passBase = known = g.cursor; resetPass(); job = Job.NONE; announced = false; returned = false; }
-        if (plan == null) { g.setStatus("planmissing"); idle(200); return; }
+        if (plan == null) { g.setStatus("planmissing"); g.setMood(BuilderGolem.CONFUSED); idle(200); return; }
+        if (plan != lastPlan) reset(plan);
         if (!plan.dimension.equals(sl.dimension().location().toString())) { g.setStatus("otherdim"); idle(200); return; }
         if (cooldown > 0) cooldown--;
+        scanSome(sl, plan);
         switch (job) {
             case NONE -> pick(sl, plan);
             case PLACE -> place(sl, plan);
@@ -103,73 +129,239 @@ final class BuildGoal extends Goal {
 
     private void idle(int ticks) { g.waitTicks = ticks; job = Job.NONE; g.getNavigation().stop(); }
 
-    private void resetPass() { deferred.clear(); missing.clear(); blocked = 0; doneSeen = 0; progress = false; passBase = g.cursor; }
-
-    private void advance(int i) { if (i == g.cursor) g.cursor++; }
-
     private int count(Item item) { return g.inventory.countItem(item); }
 
-    private int percent(Plan plan) { return Math.min(100, known * 100 / Math.max(1, plan.count())); }
+    private int percent() { return Math.min(100, cnt[OK] * 100 / Math.max(1, st.length)); }
 
-    // ── elegir el siguiente trabajo ──
-    private void pick(ServerLevel sl, Plan plan) {
+    // ── el plano contra el mundo ──
+    private void reset(Plan plan) {
+        lastPlan = plan;
         int n = plan.count();
-        if (g.cursor > n) g.cursor = 0;
-        if (scan < g.cursor) scan = g.cursor;
-        for (int budget = SCAN_BUDGET; budget > 0 && scan < n; budget--, scan++) {
-            int i = scan;
-            if (deferred.get(i)) continue;
-            BlockPos p = plan.pos(i);
-            if (!sl.isLoaded(p)) { deferred.set(i); continue; }
-            BlockState cur = sl.getBlockState(p), want = plan.state(i);
-            if (cur.is(want.getBlock())) { doneSeen++; advance(i); continue; }
-            if (!cur.isAir() && !cur.canBeReplaced()) { blocked++; advance(i); continue; }
-            Item item = want.getBlock().asItem();
-            if (item == Items.AIR) { advance(i); continue; }
-            if (Plan.free(want) || !want.canSurvive(sl, p)) { deferred.set(i); continue; }
-            int cost = Plan.cost(want);
-            if (count(item) >= cost) { begin(Job.PLACE, i, p); return; }
-            BlockPos chest = chestWith(sl, item);
-            if (chest != null) { begin(Job.FETCH, i, chest); return; }
-            missing.merge(item, cost, Integer::sum);
-            deferred.set(i);
-        }
-        if (scan < n) return;                                   // sigue mirando en el próximo tick
-        endOfPass(sl, plan);
+        st = new byte[n];
+        Arrays.fill(cnt, 0);
+        cnt[UNKNOWN] = n;
+        need.clear(); skip.clear(); gaveUp.clear(); partsMissing.clear();
+        cells = new Long2ObjectOpenHashMap<>();
+        for (int i = 0; i < n; i++) { BlockPos p = plan.pos(i); cells.computeIfAbsent(cell(p.getX(), p.getY(), p.getZ()), k -> new IntArrayList()).add(i); }
+        scan = 0; passStart = g.tickCount; passDone = false; job = Job.NONE; announced = false; returned = false;
+        lowY = Integer.MIN_VALUE;
     }
 
-    private void endOfPass(ServerLevel sl, Plan plan) {
-        known = passBase + doneSeen;
-        int stuck = deferred.cardinality();
-        boolean anyChest = g.chests.stream().anyMatch(c -> c.dimension().equals(sl.dimension()));
-        if (!missing.isEmpty()) {
-            var first = missing.entrySet().iterator().next();
-            if (!anyChest) g.setStatus("nochests");
-            else g.setStatus("missing", first.getKey().getDescription(), first.getValue());
-            g.lastMissing.clear();
-            g.lastMissing.putAll(missing);
-            scan = g.cursor;
-            resetPass();
-            idle(100);
+    private static long cell(int x, int y, int z) { return BlockPos.asLong(x >> CELL, y >> CELL, z >> CELL); }
+
+    private void set(int i, byte s) {
+        byte o = st[i];
+        if (o == s) return;
+        cnt[o]--; cnt[s]++; st[i] = s;
+        need.set(i, s == MISSING || s == PARTIAL || s == TURNED);
+    }
+
+    private void scanSome(ServerLevel sl, Plan plan) {
+        int n = plan.count();
+        for (int budget = SCAN_BUDGET; budget > 0; ) {
+            if (scan >= n) {
+                if (passDone && g.tickCount - passStart < PASS_MIN) return;
+                endPass(sl, plan);
+                scan = 0; passStart = g.tickCount;
+                return;
+            }
+            budget -= check(sl, plan, scan++);
+        }
+    }
+
+    /** Compara un bloque del plano con el mundo. Devuelve lo que costó (leer las piezas de un cable cuesta más). */
+    private int check(ServerLevel sl, Plan plan, int i) {
+        BlockPos p = plan.pos(i);
+        if (!sl.isLoaded(p)) { set(i, UNLOADED); return 1; }
+        BlockState cur = sl.getBlockState(p), want = plan.state(i);
+        if (cur.is(want.getBlock())) {
+            CompoundTag d = plan.data(i);
+            if (d == null) { set(i, !gaveUp.get(i) && turnedProp(cur, want) != null ? TURNED : OK); return 1; }
+            CompoundTag miss = missingParts(sl, p, d);
+            if (miss.isEmpty()) { partsMissing.remove(i); set(i, OK); } else { partsMissing.put(i, miss); set(i, PARTIAL); }
+            return 16;
+        }
+        if (!cur.isAir() && !cur.canBeReplaced()) { set(i, BLOCKED); return 1; }
+        if (Plan.free(want)) { set(i, OK); return 1; }                       // la otra mitad la pone el objeto al colocar la primera
+        set(i, primary(plan, i) == Items.AIR ? BLOCKED : MISSING);
+        return 1;
+    }
+
+    /** Al final de cada vuelta: se olvidan los apartados, se mira la capa más baja con trabajo y qué falta en los cofres. */
+    private void endPass(ServerLevel sl, Plan plan) {
+        passDone = true;
+        skip.clear();
+        noStock.clear();
+        lowY = Integer.MAX_VALUE;
+        Map<Item, Integer> want = new LinkedHashMap<>();
+        for (int i = need.nextSetBit(0); i >= 0; i = need.nextSetBit(i + 1)) { lowY = Math.min(lowY, plan.pos(i).getY()); needs(plan, i, want); }
+        Map<Item, Integer> stock = stock(sl, g.chests, new HashMap<>());
+        g.lastMissing.clear();
+        for (var en : want.entrySet()) {
+            int lack = en.getValue() - count(en.getKey()) - stock.getOrDefault(en.getKey(), 0);
+            if (lack > 0) g.lastMissing.put(en.getKey(), lack);
+        }
+    }
+
+    // ── piezas de cable (AE2): el plano trae qué va en cada cara; el gólem solo pone piezas en caras libres ──
+    static Item item(String id) {
+        ResourceLocation rl = ResourceLocation.tryParse(id);
+        return rl == null ? Items.AIR : BuiltInRegistries.ITEM.get(rl);
+    }
+
+    static Item partItem(CompoundTag nbt, String key) { return key.startsWith("facade") ? item("ae2:facade") : item(nbt.getCompound(key).getString("id")); }
+
+    /** Lo que le falta al bloque en el mundo: solo claves que no tiene (una cara con otra pieza no se toca). */
+    static CompoundTag missingParts(ServerLevel sl, BlockPos p, CompoundTag want) {
+        CompoundTag out = new CompoundTag();
+        BlockEntity be = sl.getBlockEntity(p);
+        if (be == null) return out;
+        CompoundTag have;
+        try { have = be.saveWithoutMetadata(sl.registryAccess()); } catch (RuntimeException e) { return out; }
+        for (String k : want.getAllKeys()) if (!have.contains(k)) out.put(k, want.get(k).copy());
+        return out;
+    }
+
+    /** El objeto sin el que no se puede empezar un bloque: el bloque o, en un cable, el propio cable. */
+    private static Item primary(Plan plan, int i) {
+        CompoundTag d = plan.data(i);
+        if (d == null) return plan.state(i).getBlock().asItem();
+        if (d.contains("cable")) return partItem(d, "cable");
+        for (String k : d.getAllKeys()) { Item it = partItem(d, k); if (it != Items.AIR) return it; }
+        return Items.AIR;
+    }
+
+    /** Lo que gasta el bloque i tal como está ahora. */
+    private void needs(Plan plan, int i, Map<Item, Integer> into) {
+        CompoundTag parts = st[i] == PARTIAL ? partsMissing.get(i) : st[i] == MISSING ? plan.data(i) : null;
+        if (st[i] == MISSING && parts == null) {
+            Item it = plan.state(i).getBlock().asItem();
+            if (it != Items.AIR) into.merge(it, Plan.cost(plan.state(i)), Integer::sum);
             return;
         }
-        g.lastMissing.clear();
-        if (stuck > 0 && progress) { g.setStatus("waiting"); scan = g.cursor; resetPass(); idle(40); return; }   // otra vuelta: quizá ya tengan apoyo
+        if (parts != null) for (String k : parts.getAllKeys()) { Item it = partItem(parts, k); if (it != Items.AIR) into.merge(it, 1, Integer::sum); }
+    }
+
+    private boolean canDoNow(Plan plan, int i) {
+        return switch (st[i]) {
+            case TURNED -> true;
+            case MISSING -> plan.data(i) == null ? count(primary(plan, i)) >= Plan.cost(plan.state(i)) : count(primary(plan, i)) > 0;
+            case PARTIAL -> {
+                CompoundTag m = partsMissing.get(i);
+                if (m != null) for (String k : m.getAllKeys()) if (count(partItem(m, k)) > 0) yield true;
+                yield false;
+            }
+            default -> false;
+        };
+    }
+
+    private Item firstLacking(Plan plan, int i) {
+        Map<Item, Integer> m = new LinkedHashMap<>();
+        needs(plan, i, m);
+        for (var en : m.entrySet()) if (count(en.getKey()) < en.getValue()) return en.getKey();
+        return Items.AIR;
+    }
+
+    private static boolean supported(ServerLevel sl, Plan plan, int i, byte s) { return s != MISSING || plan.state(i).canSurvive(sl, plan.pos(i)); }
+
+    private static Property<?> turnedProp(BlockState cur, BlockState want) {
+        if (cur.hasProperty(BlockStateProperties.DOUBLE_BLOCK_HALF) || cur.hasProperty(BlockStateProperties.BED_PART)
+            || cur.hasProperty(BlockStateProperties.CHEST_TYPE) || cur.hasProperty(BlockStateProperties.EXTENDED)) return null;
+        for (Property<?> p : TURN) if (want.hasProperty(p) && cur.hasProperty(p) && !cur.getValue(p).equals(want.getValue(p))) return p;
+        return null;
+    }
+
+    private static <T extends Comparable<T>> BlockState copy(BlockState to, BlockState from, Property<T> p) { return to.setValue(p, from.getValue(p)); }
+
+    // ── elegir el siguiente trabajo ──
+    private double score(BlockPos p) { return Math.sqrt(g.distanceToSqr(Vec3.atCenterOf(p))) + (p.getY() - lowY) * LAYER_W; }
+
+    private void pick(ServerLevel sl, Plan plan) {
+        if (!passDone) { g.setStatus("checking"); return; }
+        if (need.isEmpty()) { finished(sl); return; }
+        int near = nearHere(sl, plan);
+        if (near >= 0) { begin(Job.PLACE, near, plan.pos(near)); return; }
+        int any = -1, have = -1;
+        double sa = Double.MAX_VALUE, sh = Double.MAX_VALUE;
+        for (int i = need.nextSetBit(0); i >= 0; i = need.nextSetBit(i + 1)) {
+            if (skip.get(i)) continue;
+            double s = score(plan.pos(i));
+            boolean doable = s < sh && canDoNow(plan, i);
+            if (doable) { sh = s; have = i; }
+            if (s < sa && (doable || !noStock.contains(lacking(plan, i)))) { sa = s; any = i; }
+        }
+        if (have >= 0 && sh <= sa + DETOUR) { go(sl, plan, have); return; }       // lo que lleva encima, si no supone un rodeo grande
+        if (any < 0) { waiting(sl); return; }                                       // todo lo pendiente está apartado o sin material
+        Item lack = firstLacking(plan, any);
+        BlockPos chest = lack == Items.AIR ? null : chestWith(sl, lack);
+        if (chest != null) { begin(Job.FETCH, any, chest); return; }
+        if (lack != Items.AIR) noStock.add(lack); else skip.set(any);             // sin material: no se elige más hasta la próxima vuelta
+        if (have >= 0) go(sl, plan, have);                                          // mientras, hace lo que puede
+    }
+
+    /** El objeto que falta para el bloque i (rápido para un bloque normal, que es casi todo el plano). */
+    private Item lacking(Plan plan, int i) {
+        if (st[i] == MISSING && plan.data(i) == null) return plan.state(i).getBlock().asItem();
+        return firstLacking(plan, i);
+    }
+
+    private void go(ServerLevel sl, Plan plan, int i) {
+        if (supported(sl, plan, i, st[i])) begin(Job.PLACE, i, plan.pos(i)); else skip.set(i);
+    }
+
+    /** Lo que puede poner sin moverse: de abajo arriba y, a la misma altura, lo más cercano. */
+    private int nearHere(ServerLevel sl, Plan plan) {
+        double reach = g.reach(), r2 = reach * reach;
+        Vec3 eye = g.position().add(0, 1.0, 0);
+        int r = (int) Math.ceil(reach) + 1, bestI = -1, bestY = Integer.MAX_VALUE;
+        double bestD = 0;
+        BlockPos c = g.blockPosition();
+        for (int cx = (c.getX() - r) >> CELL; cx <= (c.getX() + r) >> CELL; cx++)
+            for (int cy = (c.getY() - r) >> CELL; cy <= (c.getY() + r + 1) >> CELL; cy++)
+                for (int cz = (c.getZ() - r) >> CELL; cz <= (c.getZ() + r) >> CELL; cz++) {
+                    IntArrayList list = cells.get(BlockPos.asLong(cx, cy, cz));
+                    if (list == null) continue;
+                    for (int k = 0; k < list.size(); k++) {
+                        int i = list.getInt(k);
+                        if (!need.get(i) || skip.get(i)) continue;
+                        BlockPos p = plan.pos(i);
+                        double d = eye.distanceToSqr(Vec3.atCenterOf(p));
+                        if (d > r2 || p.getY() > bestY || p.getY() == bestY && d >= bestD) continue;
+                        if (!canDoNow(plan, i) || !supported(sl, plan, i, st[i])) continue;
+                        bestI = i; bestY = p.getY(); bestD = d;
+                    }
+                }
+        return bestI;
+    }
+
+    private void waiting(ServerLevel sl) {
+        if (!g.lastMissing.isEmpty()) {
+            var first = g.lastMissing.entrySet().iterator().next();
+            boolean anyChest = g.chests.stream().anyMatch(c -> c.dimension().equals(sl.dimension()));
+            if (anyChest) g.setStatus("missing", first.getKey().getDescription(), first.getValue()); else g.setStatus("nochests");
+            g.setMood(BuilderGolem.CONFUSED);
+        } else {
+            g.setStatus("waiting");
+            g.setMood(BuilderGolem.IDLE);
+        }
+        idle(100);
+    }
+
+    private void finished(ServerLevel sl) {
         if (!returned && !g.inventory.isEmpty()) {
-            BlockPos c = nearestChest(sl);
             returned = true;
+            BlockPos c = nearestChest(sl);
             if (c != null) { begin(Job.RETURN, -1, c); return; }
         }
-        if (stuck > 0) g.setStatus("donepartial", stuck);
-        else g.setStatus(blocked > 0 ? "doneblocked" : "done", blocked);
+        if (cnt[UNLOADED] > 0) g.setStatus("donepartial", cnt[UNLOADED]);
+        else if (cnt[BLOCKED] > 0) g.setStatus("doneblocked", cnt[BLOCKED]);
+        else g.setStatus("done");
+        g.lastMissing.clear();
         if (!announced) {
             announced = true;
             g.tellOwner(Component.translatable("buildgolem.msg.done", g.planTitle()));
-            g.playSound(SoundEvents.VILLAGER_CELEBRATE, 1, .7f);
-        }
-        g.cursor = 0;
-        scan = 0;
-        resetPass();
+            g.setMood(BuilderGolem.HAPPY);
+        } else if (g.mood() != BuilderGolem.HAPPY) g.setMood(BuilderGolem.IDLE);
         idle(200);
     }
 
@@ -227,58 +419,169 @@ final class BuildGoal extends Goal {
 
     // ── colocar ──
     private void place(ServerLevel sl, Plan plan) {
-        BlockPos p = plan.pos(target);
-        BlockState want = plan.state(target), cur = sl.getBlockState(p);
-        if (cur.is(want.getBlock()) || !cur.isAir() && !cur.canBeReplaced()) { job = Job.NONE; return; }
-        Item item = want.getBlock().asItem();
-        int cost = Plan.cost(want);
-        if (count(item) < cost) { job = Job.NONE; return; }
-        g.setCarry(new ItemStack(item));
-        g.setStatus("building", percent(plan));
-        int r = approach(sl, p, REACH);
-        if (r < 0) { deferred.set(target); job = Job.NONE; return; }
+        int i = target;
+        check(sl, plan, i);                                     // el mundo pudo cambiar mientras caminaba
+        byte s = st[i];
+        if (s != MISSING && s != PARTIAL && s != TURNED || !canDoNow(plan, i)) { job = Job.NONE; return; }
+        BlockPos p = plan.pos(i);
+        g.setCarry(s == TURNED ? ItemStack.EMPTY : new ItemStack(s == MISSING ? primary(plan, i) : partItem(partsMissing.get(i), partsMissing.get(i).getAllKeys().iterator().next())));
+        g.setStatus("building", percent());
+        g.setMood(BuilderGolem.WORK);
+        int r = approach(sl, p, g.reach());
+        if (r < 0) { skip.set(i); job = Job.NONE; return; }
         if (r == 0) return;
         g.getLookControl().setLookAt(Vec3.atCenterOf(p));
         if (cooldown > 0) return;
-        AABB cell = new AABB(p);
-        if (g.getBoundingBox().intersects(cell)) {              // estorba él mismo: se aparta
-            BlockPos spot = standSpot(sl, p, REACH, p);
-            if (spot == null) { deferred.set(target); job = Job.NONE; } else hop(sl, spot);
-            return;
+        if (s == MISSING) {
+            AABB box = new AABB(p);
+            if (g.getBoundingBox().intersects(box)) {              // estorba él mismo: se aparta y lo intenta luego
+                BlockPos spot = standSpot(sl, p, g.reach(), p);
+                if (spot == null) { skip.set(i); job = Job.NONE; } else hop(sl, spot);
+                return;
+            }
+            if (!sl.getEntities((Entity) null, box, e -> e.isAlive() && e.blocksBuilding).isEmpty()) { skip.set(i); job = Job.NONE; return; }
         }
-        if (!sl.getEntities((Entity) null, cell, e -> e.isAlive() && e.blocksBuilding).isEmpty()) { deferred.set(target); job = Job.NONE; return; }
-        ItemStack used = g.inventory.removeItemType(item, cost);
-        if (put(sl, p, want, used)) {
-            cooldown = PLACE_EVERY;
-            known++;
-            progress = true;
+        boolean ok = switch (s) {
+            case TURNED -> turn(sl, plan, i);
+            case PARTIAL -> addParts(sl, p, partsMissing.get(i));
+            default -> placeNew(sl, plan, i);
+        };
+        if (ok) {
+            cooldown = g.placeEvery();
             announced = false;
             returned = false;
             g.swing(InteractionHand.MAIN_HAND);
-        } else {
-            g.inventory.addItem(used);
-            deferred.set(target);
-        }
+            check(sl, plan, i);
+        } else skip.set(i);
         job = Job.NONE;
-        scan = target;
+    }
+
+    private boolean placeNew(ServerLevel sl, Plan plan, int i) {
+        BlockPos p = plan.pos(i);
+        BlockState want = plan.state(i);
+        if (!want.canSurvive(sl, p)) return false;
+        CompoundTag d = plan.data(i);
+        if (d == null) {
+            Item item = want.getBlock().asItem();
+            int cost = Plan.cost(want);
+            ItemStack used = g.inventory.removeItemType(item, cost);
+            if (used.getCount() < cost) { give(used); return false; }
+            if (put(sl, p, want, used, true)) return true;
+            give(used);
+            return false;
+        }
+        // cable con piezas: el cable y las piezas y fachadas que lleve, en el mismo tick (un cable vacío se borra solo)
+        Taken t = take(d);
+        if (t.tag().isEmpty() || d.contains("cable") && !t.tag().contains("cable")) { refund(t); return false; }
+        if (!put(sl, p, want, t.spent().get(0), false)) { refund(t); return false; }
+        if (!merge(sl, p, t.tag())) { refund(t); return false; }
+        return true;
+    }
+
+    /** Añade a un cable que ya está las piezas que faltan y que el gólem lleva. */
+    private boolean addParts(ServerLevel sl, BlockPos p, CompoundTag miss) {
+        if (miss == null || !mayEdit(sl, p)) return false;
+        Taken t = take(miss);
+        if (t.tag().isEmpty()) return false;
+        if (!merge(sl, p, t.tag())) { refund(t); return false; }
+        BlockState s = sl.getBlockState(p);
+        SoundType sound = s.getSoundType(sl, p, g);
+        sl.playSound(null, p, sound.getPlaceSound(), SoundSource.BLOCKS, (sound.getVolume() + 1) / 2f, sound.getPitch() * 1.1f);
+        sl.sendParticles(ParticleTypes.ELECTRIC_SPARK, p.getX() + .5, p.getY() + .5, p.getZ() + .5, 6, .25, .25, .25, .05);
+        return true;
+    }
+
+    /** Endereza un bloque que es el bueno pero mira a otro lado, sin romperlo (conserva lo que tenga dentro). */
+    private boolean turn(ServerLevel sl, Plan plan, int i) {
+        BlockPos p = plan.pos(i);
+        BlockState cur = sl.getBlockState(p);
+        Property<?> prop = turnedProp(cur, plan.state(i));
+        if (prop == null) return false;
+        BlockState fixed = copy(cur, plan.state(i), prop);
+        BlockSnapshot snap = BlockSnapshot.create(sl.dimension(), sl, p);
+        if (!sl.setBlock(p, fixed, Block.UPDATE_ALL)) { gaveUp.set(i); return false; }
+        Player owner = g.ownerPlayer();
+        if (EventHooks.onBlockPlace(owner != null ? owner : g, snap, Direction.UP)) { snap.restore(Block.UPDATE_ALL); gaveUp.set(i); return false; }
+        if (!sl.getBlockState(p).equals(fixed)) { gaveUp.set(i); return false; }     // el bloque no se deja: se acepta como está
+        sl.playSound(null, p, SoundEvents.ITEM_FRAME_ROTATE_ITEM, SoundSource.BLOCKS, .9f, .8f);
+        return true;
+    }
+
+    /** Saca del inventario una pieza por cada clave que pueda pagar (primero el cable). */
+    private Taken take(CompoundTag want) {
+        CompoundTag out = new CompoundTag();
+        List<ItemStack> spent = new ArrayList<>();
+        List<String> keys = new ArrayList<>(want.getAllKeys());
+        keys.sort(Comparator.comparing((String k) -> !k.equals("cable")));
+        for (String k : keys) {
+            Item it = partItem(want, k);
+            if (it == Items.AIR || count(it) < 1) continue;
+            spent.add(g.inventory.removeItemType(it, 1));
+            out.put(k, want.get(k).copy());
+        }
+        return new Taken(out, spent);
+    }
+
+    private void refund(Taken t) { for (ItemStack s : t.spent()) give(s); }
+
+    private void give(ItemStack s) {
+        if (s.isEmpty()) return;
+        ItemStack rest = g.inventory.addItem(s);
+        if (!rest.isEmpty()) g.spawnAtLocation(rest);
+    }
+
+    /** Funde las piezas en los datos del bloque, como "/data merge block": lo que ya tenía se conserva. */
+    private static boolean merge(ServerLevel sl, BlockPos p, CompoundTag parts) {
+        BlockEntity be = sl.getBlockEntity(p);
+        if (be == null) return false;
+        try {
+            CompoundTag merged = be.saveWithoutMetadata(sl.registryAccess());
+            merged.merge(parts);
+            be.loadWithComponents(merged, sl.registryAccess());
+            be.setChanged();
+            BlockState s = sl.getBlockState(p);
+            sl.sendBlockUpdated(p, s, s, Block.UPDATE_ALL);
+            return true;
+        } catch (RuntimeException e) {
+            BuildGolem.LOG.warn("No se pudieron poner las piezas en {}", p, e);
+            return false;
+        }
+    }
+
+    /** ¿Dejaría una protección de terreno al dueño tocar aquí? */
+    private boolean mayEdit(ServerLevel sl, BlockPos p) {
+        Player owner = g.ownerPlayer();
+        return !EventHooks.onBlockPlace(owner != null ? owner : g, BlockSnapshot.create(sl.dimension(), sl, p), Direction.UP);
     }
 
     /** Pone el bloque como lo pondría el dueño: si una protección de terreno no se lo permite a él, no se pone. */
-    private boolean put(ServerLevel sl, BlockPos p, BlockState want, ItemStack used) {
+    private boolean put(ServerLevel sl, BlockPos p, BlockState want, ItemStack used, boolean placedBy) {
         BlockSnapshot snap = BlockSnapshot.create(sl.dimension(), sl, p);
         if (!sl.setBlock(p, want, Block.UPDATE_ALL)) return false;
         Player owner = g.ownerPlayer();
         if (EventHooks.onBlockPlace(owner != null ? owner : g, snap, Direction.UP)) { snap.restore(Block.UPDATE_ALL); return false; }
-        want.getBlock().setPlacedBy(sl, p, want, owner, used.copyWithCount(1));
+        if (placedBy) want.getBlock().setPlacedBy(sl, p, want, owner, used.copyWithCount(1));
         SoundType st = want.getSoundType(sl, p, g);
         sl.playSound(null, p, st.getPlaceSound(), SoundSource.BLOCKS, (st.getVolume() + 1) / 2f, st.getPitch() * .8f);
+        sl.sendParticles(new BlockParticleOption(ParticleTypes.BLOCK, want), p.getX() + .5, p.getY() + .5, p.getZ() + .5, 8, .3, .3, .3, .05);
         sl.gameEvent(GameEvent.BLOCK_PLACE, p, GameEvent.Context.of(g, want));
         return true;
     }
 
     // ── cofres ──
-    private IItemHandler handler(ServerLevel sl, BlockPos pos) {
+    private static IItemHandler handler(ServerLevel sl, BlockPos pos) {
         return sl.isLoaded(pos) ? sl.getCapability(Capabilities.ItemHandler.BLOCK, pos, null) : null;
+    }
+
+    /** Suma lo que hay en esos cofres (los de esta dimensión y cargados). */
+    static Map<Item, Integer> stock(ServerLevel sl, Collection<GlobalPos> chests, Map<Item, Integer> into) {
+        for (GlobalPos gp : chests) {
+            if (!gp.dimension().equals(sl.dimension())) continue;
+            IItemHandler h = handler(sl, gp.pos());
+            if (h == null) continue;
+            for (int s = 0; s < h.getSlots(); s++) { ItemStack st = h.getStackInSlot(s); if (!st.isEmpty()) into.merge(st.getItem(), st.getCount(), Integer::sum); }
+        }
+        return into;
     }
 
     private static boolean has(IItemHandler h, Item item) {
@@ -316,37 +619,68 @@ final class BuildGoal extends Goal {
     }
 
     private void fetch(ServerLevel sl, Plan plan) {
-        IItemHandler h = handler(sl, goal);
-        if (h == null) { job = Job.NONE; return; }
-        Item item = plan.state(target).getBlock().asItem();
+        if (handler(sl, goal) == null) { job = Job.NONE; return; }
         g.setCarry(ItemStack.EMPTY);
-        g.setStatus("fetching", item.getDescription());
+        g.setStatus("fetching", firstLacking(plan, target).getDescription());
+        g.setMood(BuilderGolem.WORK);
         int r = approach(sl, goal, CHEST_REACH);
-        if (r < 0) { deferred.set(target); job = Job.NONE; return; }
+        if (r < 0) { skip.set(target); job = Job.NONE; return; }
         if (r == 0) return;
         g.getLookControl().setLookAt(Vec3.atCenterOf(goal));
-        lid(sl, goal);
-        for (var en : upcoming(sl, plan, target).entrySet()) {
-            int want = en.getValue() - count(en.getKey());
-            if (want > 0 && !takeFrom(h, en.getKey(), want)) break;    // inventario lleno
+        // el cofre al que iba y los suyos que tenga al lado: un solo viaje para todo lo que viene
+        List<BlockPos> near = new ArrayList<>();
+        near.add(goal);
+        for (GlobalPos gp : g.chests)
+            if (gp.dimension().equals(sl.dimension()) && !gp.pos().equals(goal) && g.position().distanceTo(Vec3.atCenterOf(gp.pos())) <= NEAR_CHESTS && handler(sl, gp.pos()) != null) near.add(gp.pos());
+        Map<Item, Integer> avail = new HashMap<>();
+        for (BlockPos c : near) stock(sl, List.of(GlobalPos.of(sl.dimension(), c)), avail);
+        boolean took = false, full = false;
+        java.util.Set<BlockPos> opened = new java.util.HashSet<>();
+        for (var en : upcoming(plan, target, avail).entrySet()) {
+            int before = count(en.getKey()), want = en.getValue() - before;
+            if (want <= 0) continue;
+            for (BlockPos c : near) {
+                IItemHandler h = handler(sl, c);
+                if (h == null || !has(h, en.getKey())) continue;
+                if (opened.add(c)) lid(sl, c);
+                full = !takeFrom(h, en.getKey(), want - (count(en.getKey()) - before));
+                if (full || count(en.getKey()) - before >= want) break;
+            }
+            took |= count(en.getKey()) > before;
+            if (full) break;                                    // inventario lleno
         }
+        if (opened.isEmpty()) lid(sl, goal);
+        if (took) sl.playSound(null, g.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, .5f, .9f);
+        else if (!canDoNow(plan, target)) skip.set(target);    // ya no estaba en el cofre
         cooldown = 10;
         job = Job.NONE;
-        scan = target;
     }
 
-    /** Lo que pedirán los próximos bloques del plano, en orden de aparición. */
-    private Map<Item, Integer> upcoming(ServerLevel sl, Plan plan, int from) {
-        Map<Item, Integer> need = new LinkedHashMap<>();
-        for (int i = from; i < Math.min(plan.count(), from + AHEAD) && need.size() < g.inventory.getContainerSize(); i++) {
-            BlockPos p = plan.pos(i);
-            if (!sl.isLoaded(p)) continue;
-            BlockState cur = sl.getBlockState(p), want = plan.state(i);
-            if (cur.is(want.getBlock()) || !cur.isAir() && !cur.canBeReplaced() || Plan.free(want)) continue;
-            Item item = want.getBlock().asItem();
-            if (item != Items.AIR) need.merge(item, Plan.cost(want), Integer::sum);
+    /**
+     * Lo que pide el trabajo que viene: el objetivo y luego lo más cercano a él (de abajo arriba), hasta llenar el inventario
+     * con lo que de verdad hay (lo que lleva más lo de los cofres). Así no vuelve al cofre por cada bloque suelto.
+     */
+    private Map<Item, Integer> upcoming(Plan plan, int from, Map<Item, Integer> avail) {
+        BlockPos c = plan.pos(from);
+        IntArrayList order = new IntArrayList();
+        for (int i = need.nextSetBit(0); i >= 0; i = need.nextSetBit(i + 1)) if (i != from && !skip.get(i)) order.add(i);
+        order.sort((a, b) -> Double.compare(workScore(plan.pos(a), c), workScore(plan.pos(b), c)));
+        Map<Item, Integer> out = new LinkedHashMap<>();
+        needs(plan, from, out);
+        for (int k = 0; k < order.size() && slots(out, avail) < g.inventory.getContainerSize(); k++) needs(plan, order.getInt(k), out);
+        return out;
+    }
+
+    private double workScore(BlockPos p, BlockPos c) { return Math.sqrt(p.distSqr(c)) + (p.getY() - lowY) * LAYER_W; }
+
+    /** Huecos de inventario que ocuparía llevarse eso, contando solo lo que hay. */
+    private int slots(Map<Item, Integer> m, Map<Item, Integer> avail) {
+        int n = 0;
+        for (var e : m.entrySet()) {
+            int max = Math.max(1, e.getKey().getDefaultMaxStackSize()), can = Math.min(e.getValue(), count(e.getKey()) + avail.getOrDefault(e.getKey(), 0));
+            n += (can + max - 1) / max;
         }
-        return need;
+        return n;
     }
 
     /** Saca hasta amount del cofre. false si ya no le cabe nada más. */

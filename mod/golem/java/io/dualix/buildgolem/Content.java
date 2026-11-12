@@ -4,8 +4,18 @@ package io.dualix.buildgolem;
 import io.dualix.buildgolem.item.BinderItem;
 import io.dualix.buildgolem.item.BlankBlueprintItem;
 import io.dualix.buildgolem.item.BlueprintItem;
+import io.dualix.buildgolem.item.GearItem;
 import io.dualix.buildgolem.item.GolemItem;
 import io.dualix.buildgolem.item.HardHatItem;
+import io.dualix.buildgolem.item.VestItem;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ArmorItem;
+import net.minecraft.world.item.ArmorMaterial;
+import net.minecraft.world.item.crafting.Ingredient;
+import java.util.Map;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
@@ -32,6 +42,12 @@ public final class Content {
     private static final DeferredRegister<EntityType<?>> ENTITIES = DeferredRegister.create(Registries.ENTITY_TYPE, BuildGolem.MOD_ID);
     private static final DeferredRegister.DataComponents COMPONENTS = DeferredRegister.createDataComponents(Registries.DATA_COMPONENT_TYPE, BuildGolem.MOD_ID);
     private static final DeferredRegister<CreativeModeTab> TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, BuildGolem.MOD_ID);
+    private static final DeferredRegister<ArmorMaterial> MATERIALS = DeferredRegister.create(Registries.ARMOR_MATERIAL, BuildGolem.MOD_ID);
+
+    /** El capataz: casco de obra y chaleco reflectante puestos. Sus gólems trabajan más deprisa cuando está cerca y le saludan. */
+    public static boolean foreman(Player p) {
+        return p.getItemBySlot(EquipmentSlot.HEAD).is(HARD_HAT.get()) && p.getItemBySlot(EquipmentSlot.CHEST).is(HI_VIS_VEST.get());
+    }
 
     // ── datos en los objetos ──
     /** Cofres que lleva apuntados el vinculador (máximo 5). */
@@ -46,12 +62,18 @@ public final class Content {
     public static final DeferredItem<Item> BLUEPRINT_ALLOY = ITEMS.registerSimpleItem("blueprint_alloy", new Item.Properties().fireResistant());
     public static final DeferredItem<Item> GOLEM_CORE = ITEMS.registerSimpleItem("golem_core", new Item.Properties().rarity(Rarity.EPIC).fireResistant().stacksTo(16));
     public static final DeferredItem<HardHatItem> HARD_HAT = ITEMS.register("hard_hat", () -> new HardHatItem(new Item.Properties().stacksTo(1)));
-    public static final DeferredItem<Item> HI_VIS_VEST = ITEMS.registerSimpleItem("hi_vis_vest", new Item.Properties().stacksTo(1));
+    /** El chaleco puesto: 1 de armadura, sin desgaste; su capa se dibuja con textures/models/armor/hi_vis_vest_layer_1.png. */
+    public static final DeferredHolder<ArmorMaterial, ArmorMaterial> HI_VIS = MATERIALS.register("hi_vis", () -> new ArmorMaterial(
+        Map.of(ArmorItem.Type.CHESTPLATE, 1), 12, SoundEvents.ARMOR_EQUIP_LEATHER, () -> Ingredient.EMPTY,
+        List.of(new ArmorMaterial.Layer(ResourceLocation.fromNamespaceAndPath(BuildGolem.MOD_ID, "hi_vis_vest"))), 0f, 0f));
+    public static final DeferredItem<VestItem> HI_VIS_VEST = ITEMS.register("hi_vis_vest", () -> new VestItem(HI_VIS, new Item.Properties().stacksTo(1)));
     public static final DeferredItem<GolemItem> BUILDER_GOLEM = ITEMS.register("builder_golem", () -> new GolemItem(new Item.Properties().rarity(Rarity.EPIC).stacksTo(1).fireResistant()));
     // ── herramientas ──
     public static final DeferredItem<BinderItem> BINDER = ITEMS.register("binder", () -> new BinderItem(new Item.Properties().stacksTo(1)));
     public static final DeferredItem<BlankBlueprintItem> BLANK_BLUEPRINT = ITEMS.register("blank_blueprint", () -> new BlankBlueprintItem(new Item.Properties().stacksTo(16)));
     public static final DeferredItem<BlueprintItem> BLUEPRINT = ITEMS.register("blueprint", () -> new BlueprintItem(new Item.Properties().stacksTo(1).rarity(Rarity.UNCOMMON)));
+    // ── mejora del gólem ──
+    public static final DeferredItem<GearItem> WORK_GEAR = ITEMS.register("work_gear", () -> new GearItem(new Item.Properties().stacksTo(16).rarity(Rarity.UNCOMMON)));
 
     public static final DeferredHolder<EntityType<?>, EntityType<BuilderGolem>> GOLEM = ENTITIES.register("builder_golem",
         () -> EntityType.Builder.of(BuilderGolem::new, MobCategory.MISC).sized(0.9F, 1.9F).eyeHeight(1.55F).clientTrackingRange(10).fireImmune().build("builder_golem"));
@@ -62,6 +84,7 @@ public final class Content {
         .displayItems((params, out) -> {
             out.accept(BUILDER_GOLEM.get());
             out.accept(GOLEM_CORE.get());
+            out.accept(WORK_GEAR.get());
             out.accept(HARD_HAT.get());
             out.accept(HI_VIS_VEST.get());
             out.accept(BLUEPRINT_ALLOY.get());
@@ -71,6 +94,7 @@ public final class Content {
         }).build());
 
     static void register(IEventBus bus) {
+        MATERIALS.register(bus);
         ITEMS.register(bus);
         ENTITIES.register(bus);
         COMPONENTS.register(bus);

@@ -101,7 +101,7 @@ final class GhostMesh {
                 if (!p.shown(i)) continue;
                 BlockPos w = p.world(i);
                 SECTIONS.computeIfAbsent(SectionPos.asLong(w.getX() >> 4, w.getY() >> 4, w.getZ() >> 4), Section::new).idx.add(i);
-                if (p.ghost(i)) GHOSTS.put(w.asLong(), p.want(i));   // si ya se comparó con el mundo; si no, llegan con la comparación
+                if (p.ghost(i)) GHOSTS.put(w.asLong(), p.show(i));   // si ya se comparó con el mundo; si no, llegan con la comparación
             }
             p.dirty.clear();
             return;
@@ -117,7 +117,7 @@ final class GhostMesh {
             if (s == null) continue;
             for (int i : s.idx) {
                 long pos = p.world(i).asLong();
-                if (p.ghost(i)) GHOSTS.put(pos, p.want(i)); else GHOSTS.remove(pos);
+                if (p.ghost(i)) GHOSTS.put(pos, p.show(i)); else GHOSTS.remove(pos);
             }
         }
         p.dirty.clear();
@@ -136,7 +136,7 @@ final class GhostMesh {
             VertexConsumer vc = new Tint(bb, alpha);
             for (int i : s.idx) {
                 if (!p.ghost(i)) continue;
-                BlockState st = p.want(i);
+                BlockState st = p.show(i);                   // un cable de AE2 se ve como su fachada o como cristal de su color
                 if (st.getRenderShape() != RenderShape.MODEL) continue;
                 BlockPos pos = p.world(i);
                 ps.pushPose();

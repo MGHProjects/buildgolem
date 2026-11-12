@@ -72,7 +72,7 @@ export const P = {
   books:   { n: 'Librería', id: mc('bookshelf'), side: mc('bookshelf'), top: mc('oak_planks') },
   lectern: { n: 'Atril', id: mc('lectern'), model: mc('block/lectern'), yaw: 180 },
   craft:   { n: 'Mesa de trabajo (matrices y oro)', id: mc('crafting_table'), front: mc('crafting_table_front'), side: mc('crafting_table_side'), top: mc('crafting_table_top'), bottom: mc('oak_planks') },
-  barrel:  { n: 'Barril (arcilla, oro, paneles de cristal)', id: mc('barrel'), side: mc('barrel_side'), top: mc('barrel_top'), bottom: mc('barrel_bottom') },
+  barrel:  { n: 'Barril (arcilla, oro, paneles de cristal)', id: mc('barrel'), side: mc('barrel_side'), top: mc('barrel_top'), bottom: mc('barrel_bottom'), props: { facing: 'up' } },
   iblock:  cube('Bloque de hierro (estatua del golem)', 'iron_block'),
   // la granja
   sim:     { n: 'Simulation Chamber (Hostile Neural Networks) · modelo de golem de hierro', id: 'hostilenetworks:sim_chamber', model: 'hostilenetworks:block/sim_chamber', yaw: 180, glow: ['hostilenetworks:simulation_chamber_north'], dim: 0.5 },

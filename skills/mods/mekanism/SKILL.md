@@ -17,6 +17,15 @@ description: Mekanism 10.7 (1.21.1) con Generators y Mekanism More Machines: pro
 | fundido | Energized Smelter | polvo → lingote |
 Resultado ×5: 10 lingotes por 3 crudos.
 
+## Qué lleva una instalación completa
+"Todo lo de Mekanism" es, como mínimo, la línea ×5 entera con sus gases, no solo un tramo. Lista de comprobación:
+- Línea ×5: disolución → lavado → cristalizado → inyección → purificación → triturado → enriquecido → fundido (una máquina o factoría por paso, cada una tocando lo que la alimenta).
+- Ácido sulfúrico (disolución): Chemical Oxidizer (azufre → SO₂) + Electrolytic Separator (agua → H₂ + O₂) + Chemical Infuser (O₂ + SO₂ → SO₃) + Rotary Condensentrator (agua → vapor) + Chemical Infuser (SO₃ + vapor → H₂SO₄).
+- HCl (inyección): Thermal Evaporation (agua → salmuera) + Electrolytic Separator (salmuera → sodio + Cl₂) + Chemical Infuser (H₂ + Cl₂ → HCl).
+- O₂ (purificación) y H₂: Electrolytic Separator. Agua para el lavado y los separadores.
+- Energía para todo (Mekanism Generators o la del jugador) y tanques o celdas de químicos entre pasos.
+- Si se pide: nuclear (combustible, fisión, turbina), polonio/plutonio, SPS y antimateria (abajo).
+
 ## Factorías
 Tiers basic / advanced / elite / ultimate = 3 / 5 / 7 / 9 procesos en paralelo. Mekanism More Machines (mekmm) añade factorías de disolución, lavado y cristalizado y tiers superiores (overclocked, quantum, dense, multiversal).
 

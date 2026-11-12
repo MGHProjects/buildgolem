@@ -1,6 +1,7 @@
 // Mundo: los bloques de un diseño en una rejilla (índices, grupos que se ocultan, partes y piezas P2P por celda).
 // Un diseño exporta P, BLOCKS, ZONES, W, H y, si quiere, WX/WZ, WALLS, TERMS (partes en celdas de cable), FIBER, CHANNELS, PIT…
 export const STEP = { e: [1, 0], w: [-1, 0], s: [0, 1], n: [0, -1] };
+export const DIR3 = { e: [1, 0, 0], w: [-1, 0, 0], s: [0, 0, 1], n: [0, 0, -1], u: [0, 1, 0], d: [0, -1, 0] }; // caras de una celda (las piezas de cable también van arriba y abajo)
 export const key = (x, y, z) => `${x},${y},${z}`;
 
 export function createWorld(M) {
@@ -19,9 +20,9 @@ export function createWorld(M) {
   const P2PAT = new Map(), TERMAT = new Map(), TERMF = new Set();
   for (const p of CHANNELS.P2P) (P2PAT.get(key(p.x, p.y, p.z)) ?? P2PAT.set(key(p.x, p.y, p.z), []).get(key(p.x, p.y, p.z))).push(p);
   for (const t of TERMS) {
-    const k = key(t.x, t.y, t.z), [dx, dz] = STEP[t.f];
+    const k = key(t.x, t.y, t.z);
     (TERMAT.get(k) ?? TERMAT.set(k, []).get(k)).push(t);
-    TERMF.add(`${k},${dx},0,${dz}`); // en esa cara no hay fachada: va la pantalla
+    TERMF.add(`${k},${DIR3[t.f] ?? DIR3.s}`); // en esa cara no hay fachada: va la pantalla
   }
   const Y0 = Math.min(...GB.map(b => b.y)), NY = Math.max(...GB.map(b => b.y)) - Y0 + 1, NC = WX * WZ * NY;
   const idx = (x, y, z) => x < 0 || z < 0 || x >= WX || z >= WZ || y < Y0 || y >= Y0 + NY ? -1 : ((y - Y0) * WZ + z) * WX + x;

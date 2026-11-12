@@ -8,6 +8,7 @@ import io.dualix.buildgolem.BuilderGolem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ItemInHandRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.entity.MobRenderer;
 import net.minecraft.client.renderer.entity.RenderLayerParent;
@@ -25,6 +26,17 @@ public class BuilderGolemRenderer extends MobRenderer<BuilderGolem, BuilderGolem
     public BuilderGolemRenderer(EntityRendererProvider.Context ctx) {
         super(ctx, new BuilderGolemModel(ctx.bakeLayer(BuilderGolemModel.LAYER)), .55F);
         addLayer(new Carry(this, ctx.getItemInHandRenderer()));
+        addLayer(new Glow(this));
+    }
+
+    /** La baliza del casco brilla (como los ojos de una araña): se ve en la oscuridad. */
+    private static final class Glow extends RenderLayer<BuilderGolem, BuilderGolemModel> {
+        Glow(RenderLayerParent<BuilderGolem, BuilderGolemModel> parent) { super(parent); }
+
+        @Override
+        public void render(PoseStack ps, MultiBufferSource buf, int light, BuilderGolem e, float limb, float amount, float pt, float age, float yaw, float pitch) {
+            if (e.gears() > 0 && !e.isInvisible()) getParentModel().glow(ps, buf.getBuffer(RenderType.eyes(TEXTURE)));
+        }
     }
 
     @Override

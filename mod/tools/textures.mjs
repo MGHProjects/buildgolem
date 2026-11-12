@@ -56,9 +56,14 @@ const ITEMS = {
     '..sssssZZsssss..', '..oooooZZooooo..', '..SSSSSZZSSSSS..', '..sssssZZsssss..', '..oooooZZooooo..', '..dddddddddddd..', '................', '................',
   ], { O: '#c45a00', o: '#ff7a1a', Z: '#9c3d00', S: '#eef3f6', s: '#a9b7c2', d: '#a84a00' }],
   builder_golem: [[
-    '................', '......hYYh......', '....YYYYYYYY....', '...YYYhYYYYYY...', '...YYYYYYYYYY...', '.BBBBBBBBBBBBBB.', '..bbbbbbbbbbbb..', '...IIIIIIIIII...',
-    '...IddIIIIddI...', '...IEcIIIIcEI...', '...IIIInnIIII...', '...IIIInnIIII...', '...IvIIIIIIII...', '...IvvIImmIII...', '...dddddddddd...', '................',
-  ], { h: '#fff0b0', Y: '#ffc21a', B: '#c99200', b: '#7a5a00', I: '#d6d2c9', d: '#8c8880', E: '#d9feff', c: '#35d0e0', n: '#b4b0a7', v: '#4f8a2f', m: '#77736b' }],
+    '.......aa.......', '......oAAo......', '....ohYYYYbo....', '...ohYYYYYYbo...', '..ohYYYYYYYYbo..', '.oBBBBBBBBBBBBo.', '..ouuuuuuuuuuo..', '...oIIIIIIIso...',
+    '...oIddIIddso...', '...oIEcIIcEso...', '...oIIInnIIso...', '...oIIInnIIso...', '...ovIImmIIso...', '...ovvIIIIIso...', '...oddddddddo...', '................',
+  ], { o: '#3a3530', a: '#ffb000', A: '#3a3f45', h: '#fff0b0', Y: '#ffc21a', b: '#c99200', B: '#e8a800', u: '#7a5a00', I: '#d6d2c9', s: '#b4b0a7', d: '#8c8880',
+    E: '#d9feff', c: '#35d0e0', n: '#a19d94', v: '#4f8a2f', m: '#77736b' }],
+  work_gear: [[
+    '................', '......gGGg......', '...gg.gGGg.gg...', '..gGGgGGGGgGGg..', '..gGGGhhGGGGGg..', '...gGGGddGGGg...', '.ggGGGdyydGGGgg.', '.gGGGdyYYydGGGg.',
+    '.gGGGdyYYydGGGg.', '.ggGGGdyydGGGgg.', '...gGGGddGGGg...', '..gGGGGGGGGsGg..', '..gGGgGGGGgsGg..', '...gg.gGGg.gg...', '......gGGg......', '................',
+  ], { g: '#4a4e52', G: '#c9c6bd', h: '#efece4', s: '#9a968e', d: '#22282e', y: '#ffc21a', Y: '#fff0b0' }],
   binder: [[
     '................', '....yyyy........', '...yy..yy.......', '..KKKKKKKKKKK...', '..KNNNNNNNNNKp..', '..KNwwwwwwwNKp..', '..KNNNNNNNNNKp..', '..KNwwwwwNNNKp..',
     '..KNNNNNNNNNKp..', '..KNNNCCCNNNKp..', '..KNNNCyCNNNKp..', '..KNNNCCCNNNKp..', '..KNNNNNNNNNKp..', '..KKKKKKKKKKKp..', '...ppppppppppp..', '................',
@@ -80,39 +85,83 @@ for (const [name, [rows, pal]] of Object.entries(ITEMS)) {
     JSON.stringify({ parent: 'minecraft:item/generated', textures: { layer0: `buildgolem:item/${name}` } }, null, 2) + '\n');
 }
 
-// ── casco de obra: textura-paleta y modelo 3D (se ve en la cabeza del jugador) ──
+// ── casco de obra: modelo 3D (se ve en la cabeza del jugador) con visera, banda reflectante, nervio central, linterna que
+// brilla en la oscuridad, lápiz metido en la banda y la pegatina del gólem a los lados. Textura 32×32: en el modelo, uv = px / 2
 {
-  const c = new Canvas(16, 16), Y = hex('#ffc21a');
-  c.rect(0, 0, 8, 8, (i, j) => shade(hex('#ffd34d'), .95 + noise(i, j, 1) * .1));
-  c.rect(8, 0, 8, 8, (i, j) => shade(Y, j > 5 ? .82 : .96 + noise(i, j, 2) * .08));
-  c.rect(0, 8, 16, 2, (i, j) => shade(Y, .9 + noise(i, j, 3) * .08));
-  c.rect(0, 10, 16, 2, () => hex('#8a6500'));
-  c.rect(0, 12, 4, 4, (i, j) => j === 3 ? hex('#8a1515') : hex('#d22a2a'));
-  c.rect(4, 12, 4, 4, () => hex('#3f7a2a'));
-  c.rect(8, 12, 8, 4, (i, j) => shade(hex('#ffe07a'), .96 + noise(i, j, 4) * .08));
+  const lerp = (p, q, t) => p.map((v, k) => Math.round(v + (q[k] - v) * t));
+  const c = new Canvas(32, 32), Y = hex('#ffc21a'), YL = hex('#ffd34d'), YD = hex('#e8a800');
+  const shell = (i, j, h, s) => shade(lerp(YL, YD, j / (h - 1)), .96 + noise(i, j, s) * .08);
+  c.rect(0, 0, 16, 6, (i, j) => shell(i, j, 6, 1));                                      // A: costado liso (delante y detrás)
+  c.rect(0, 6, 16, 6, (i, j) => shell(i, j, 6, 2));                                      // B: costado con pegatina (izquierda y derecha)
+  const sticker = [' ggg ', 'gIIIg', 'gEIEg', 'gIIIg', ' gYg '];                          // la cara del gólem, con su casco
+  sticker.forEach((r, y) => [...r].forEach((ch, x) => { if (ch !== ' ') c.set(5 + x, 6 + y, hex({ g: '#3a3530', I: '#d6d2c9', E: '#35d0e0', Y: '#ffc21a' }[ch])); }));
+  c.rect(16, 0, 16, 16, (i, j) => { const d = Math.hypot(i - 7.5, j - 7.5) / 10.6; return shade(lerp(hex('#fff0b0'), Y, Math.min(1, d * 1.3)), (d > .8 ? .86 : 1) * (.97 + noise(i, j, 3) * .06)); }); // C: arriba
+  c.rect(0, 12, 16, 2, (i, j) => shade(Y, .92 + noise(i, j, 4) * .08));                   // D: ala por arriba
+  c.rect(0, 14, 16, 1, () => hex('#c99200'));                                            //    canto del ala
+  c.rect(0, 15, 16, 1, () => hex('#7a5a00'));                                            //    ala por debajo
+  c.rect(0, 16, 16, 2, (i, j) => (i + j) % 4 === 0 ? hex('#ffffff') : j === 0 ? hex('#eef3f6') : hex('#a9b7c2')); // E: banda reflectante
+  c.rect(16, 16, 8, 4, (i, j) => shade(hex('#ffe07a'), j === 0 ? 1.04 : .95 + noise(i, j, 5) * .06));             // F: nervios
+  c.rect(24, 16, 4, 4, (i, j) => i === 0 || j === 0 ? hex('#5b6168') : hex('#3a3f45'));                           // G: carcasa de la linterna
+  c.rect(28, 16, 4, 4, (i, j) => (i === 1 || i === 2) && (j === 1 || j === 2) ? hex('#ffffff') : hex('#fff2b8'));  // H: cristal (brilla)
+  c.rect(16, 20, 4, 2, (i, j) => j === 1 ? hex('#c99200') : Y);                                                    // I: lápiz
+  c.rect(20, 20, 2, 2, (i) => i === 1 ? hex('#3a3a3a') : hex('#e0b07a'));                                          //    punta
+  c.rect(22, 20, 2, 2, (i) => i === 0 ? hex('#b8c0c8') : hex('#e88aa0'));                                          //    goma
   c.save(join(ASSETS, 'textures/item/hard_hat.png'));
-  const all = uv => Object.fromEntries(['north', 'south', 'east', 'west', 'up', 'down'].map(f => [f, { uv: f === 'up' ? uv.up : f === 'down' ? uv.down : uv.side, texture: '#hat' }]));
+  const px = r => r.map(v => v / 2);                                                       // de píxeles de la textura a uv del modelo
+  const box = (from, to, uv, extra = {}) => ({ from, to, faces: Object.fromEntries(['north', 'south', 'east', 'west', 'up', 'down'].map(f => [f, { uv: px(uv[f] || uv.side), texture: '#hat', ...extra[f] }])) });
+  const RIDGE = { side: [16, 16, 24, 18], up: [16, 16, 24, 20], down: [16, 18, 24, 20] };
+  const GLOW = { neoforge_data: { block_light: 15, sky_light: 15 } };
   const model = {
     textures: { hat: 'buildgolem:item/hard_hat', particle: 'buildgolem:item/hard_hat' },
     elements: [
-      { from: [1, 14, -1.5], to: [15, 15, 15], faces: all({ up: [0, 8, 16, 10], down: [0, 10, 16, 12], side: [0, 8, 16, 9] }) },
-      { from: [2, 15, 2], to: [14, 18.5, 14], faces: all({ up: [0, 0, 8, 8], down: [0, 10, 16, 12], side: [8, 0, 16, 8] }) },
-      { from: [7, 18.5, 2.5], to: [9, 19.5, 13.5], faces: all({ up: [8, 12, 16, 16], down: [8, 12, 16, 16], side: [8, 12, 16, 16] }) },
-      { from: [13.5, 16, 6.5], to: [14.6, 17.2, 7.7], faces: all({ up: [0, 12, 4, 15], down: [0, 12, 4, 16], side: [0, 12, 4, 16] }) },
-      { from: [13.8, 15, 7], to: [14.3, 16, 7.3], faces: all({ up: [4, 12, 8, 16], down: [4, 12, 8, 16], side: [4, 12, 8, 16] }) },
+      box([-0.6, 12.2, -0.6], [16.6, 12.9, 16.6], { up: [0, 12, 16, 14], down: [0, 15, 16, 16], side: [0, 14, 16, 15] }),            // ala
+      box([2.5, 12.2, -3], [13.5, 12.9, -0.6], { up: [0, 12, 16, 14], down: [0, 15, 16, 16], side: [0, 14, 16, 15] }),           // visera
+      box([0.6, 12.4, 0.6], [15.4, 15.8, 15.4], { north: [0, 0, 16, 6], south: [0, 0, 16, 6], east: [0, 6, 16, 12], west: [0, 6, 16, 12], up: [16, 0, 32, 16], down: [0, 15, 16, 16] }),
+      box([0.4, 13, 0.4], [15.6, 13.8, 15.6], { side: [0, 16, 16, 18], up: [0, 16, 16, 18], down: [0, 16, 16, 18] }),           // banda reflectante
+      box([1.8, 15.8, 1.8], [14.2, 17, 14.2], { side: [0, 0, 16, 3], up: [16, 0, 32, 16], down: [16, 0, 32, 16] }),                      // cúpula
+      box([6.8, 15.8, 0.3], [9.2, 17.3, 15.7], RIDGE), box([7.4, 17.3, 1.2], [8.6, 17.8, 14.8], RIDGE),
+      box([6, 13.2, -0.4], [10, 15.2, 0.6], { side: [24, 16, 28, 20] }),                                                           // linterna
+      box([6.5, 13.6, -0.7], [9.5, 14.8, -0.4], { side: [28, 16, 32, 20] }, { north: GLOW }),                                      // su cristal
+      box([15.6, 13, 3.5], [16.4, 13.8, 12], { side: [16, 20, 20, 22] }),                                                        // lápiz en la banda
+      box([15.6, 13, 12], [16.4, 13.8, 13.2], { side: [20, 20, 22, 22] }),
+      box([15.6, 13, 2.6], [16.4, 13.8, 3.5], { side: [22, 20, 24, 22] }),
     ],
     display: {
       head: { translation: [0, 0, 0], scale: [1, 1, 1] },
-      gui: { rotation: [30, 135, 0], translation: [0, -6.5, 0], scale: [.8, .8, .8] },
+      gui: { rotation: [30, 135, 0], translation: [0, -7.5, 0], scale: [.8, .8, .8] },
       ground: { translation: [0, -2, 0], scale: [.4, .4, .4] },
-      fixed: { rotation: [0, 180, 0], translation: [0, -6, 0], scale: [.7, .7, .7] },
-      thirdperson_righthand: { rotation: [75, 45, 0], translation: [0, -2, 0], scale: [.375, .375, .375] },
-      thirdperson_lefthand: { rotation: [75, 45, 0], translation: [0, -2, 0], scale: [.375, .375, .375] },
-      firstperson_righthand: { rotation: [0, 45, 0], translation: [0, -2, 0], scale: [.4, .4, .4] },
-      firstperson_lefthand: { rotation: [0, 225, 0], translation: [0, -2, 0], scale: [.4, .4, .4] },
+      fixed: { rotation: [0, 180, 0], translation: [0, -6.5, 0], scale: [.7, .7, .7] },
+      thirdperson_righthand: { rotation: [75, 45, 0], translation: [0, -2.5, 0], scale: [.375, .375, .375] },
+      thirdperson_lefthand: { rotation: [75, 45, 0], translation: [0, -2.5, 0], scale: [.375, .375, .375] },
+      firstperson_righthand: { rotation: [0, 45, 0], translation: [0, -2.5, 0], scale: [.4, .4, .4] },
+      firstperson_lefthand: { rotation: [0, 225, 0], translation: [0, -2.5, 0], scale: [.4, .4, .4] },
     },
   };
   writeFileSync(join(ASSETS, 'models/item/hard_hat.json'), JSON.stringify(model, null, 2) + '\n');
+}
+
+// ── chaleco reflectante puesto (capa de armadura 64×32 de Minecraft: torso en 16,16; sin mangas) ──
+{
+  const c = new Canvas(64, 32), OR = hex('#ff7a1a'), SIL = hex('#eef3f6'), SIL_D = hex('#a9b7c2'), EDGE = hex('#a84a00');
+  const vest = (x, y, front) => {                                                          // x, y: columna y fila dentro de la cara
+    if (y === 6 || y === 9) return SIL;
+    if (y === 7 || y === 10) return SIL_D;
+    if (y === 11) return EDGE;
+    if (front !== undefined && (x === 1 || x === 6)) return x === 1 ? SIL : SIL_D;          // tirantes reflectantes
+    return shade(OR, .93 + noise(x, y, 60 + (front ? 1 : 0)) * .1);
+  };
+  c.rect(20, 20, 8, 12, (i, j) => {                                                        // delante: cuello en V, cremallera, insignia
+    if (j === 0 && i >= 2 && i <= 5 || j === 1 && i >= 3 && i <= 4) return null;
+    if (j >= 2 && (i === 3 || i === 4) && j !== 6 && j !== 7 && j !== 9 && j !== 10) return i === 3 ? hex('#c45a00') : hex('#9c3d00');
+    if (i === 5 && j === 3) return hex('#ffc21a');
+    if (i === 5 && j === 4) return hex('#c99200');
+    return vest(i, j, true);
+  });
+  c.rect(32, 20, 8, 12, (i, j) => (i === 3 || i === 4) && (j === 2 || j === 3) ? hex('#ffc21a') : vest(i, j, false)); // detrás, con el logo
+  for (const u of [16, 28]) c.rect(u, 20, 4, 12, (i, j) => vest(i, j));                   // costados
+  c.rect(20, 16, 8, 4, (i) => i <= 1 || i >= 6 ? shade(OR, .9) : null);                   // hombros (el cuello, libre)
+  c.rect(28, 16, 8, 4, () => EDGE);
+  c.save(join(ASSETS, 'textures/models/armor/hi_vis_vest_layer_1.png'));
 }
 
 // ── gólem 128×128 ──
@@ -195,7 +244,87 @@ box(76, 64, 16, 10, 1, (f, i, j, w, h) => {
   if (i >= 12 && i <= 13 && j >= 6 && j <= 7) return Y_;
   return (i % 3 === 0 || j % 3 === 0) ? hex('#2f6fb0') : BLUE;
 });
+// baliza del casco (con engranajes de obra): base de metal oscuro y luz ámbar (la luz también se dibuja brillante)
+box(0, 82, 3, 1, 3, (f, i, j, w, h, X, Y) => shade(hex('#3a3f45'), .9 + noise(X, Y, 30) * .15));
+box(16, 82, 2, 2, 2, (f, i, j) => f === 'up' ? hex('#fff0b0') : (i + j) % 2 === 0 ? hex('#ffd04a') : hex('#ffb000'));
+// bolsa de cuero con hebilla, martillo (mango de madera, cabeza de hierro) y lápiz
+box(28, 82, 3, 3, 2, (f, i, j, w, h, X, Y) => f === 'north' && j === 0 ? hex('#6b4423') : f === 'north' && i === 1 && j === 1 ? Y_ : shade(hex('#8a5a33'), .9 + noise(X, Y, 31) * .15));
+box(44, 82, 1, 5, 1, (f, i, j, w, h, X, Y) => shade(hex('#9b6b3c'), .9 + noise(X, Y, 32) * .15));
+box(52, 82, 3, 2, 2, (f, i, j, w, h, X, Y) => f === 'up' ? hex('#8c8880') : shade(hex('#5b5f63'), .95 + noise(X, Y, 33) * .1));
+box(64, 82, 1, 1, 4, f => f === 'north' ? hex('#3a3a3a') : f === 'south' ? hex('#e88aa0') : Y_);
 T.save(join(ASSETS, 'textures/entity/builder_golem.png'));
+
+// ── logos (CurseForge, la lista de mods del juego y la web): pixel art de 64×64 ampliado ×8, sobre papel de plano ──
+const PAPER = hex('#1d5a94'), GRID = hex('#2f6fb0'), INK = hex('#0f3d6b');
+const mix = (a, b, t) => a.map((v, k) => Math.round(v + (b[k] - v) * t));
+function paper() {
+  const c = new Canvas(64, 64);
+  c.rect(0, 0, 64, 64, (i, j) => i < 2 || j < 2 || i > 61 || j > 61 ? INK : i % 8 === 4 || j % 8 === 4 ? GRID : shade(PAPER, .97 + noise(i, j, 40) * .06));
+  return c;
+}
+function big(c, k = 8) {
+  const out = new Canvas(c.w * k, c.h * k);
+  for (let y = 0; y < out.h; y++) for (let x = 0; x < out.w; x++) {
+    const i = ((y / k | 0) * c.w + (x / k | 0)) * 4;
+    out.set(x, y, [c.px[i], c.px[i + 1], c.px[i + 2]], c.px[i + 3]);
+  }
+  return out;
+}
+// BuildGolem: la cabeza del gólem con su casco de obra y el chaleco reflectante
+const golemLogo = paper();
+{
+  const L = golemLogo;
+  L.rect(10, 56, 44, 6, (i, j) => j === 3 || j === 4 ? (j === 3 ? SILVER : SILVER_D) : i === 21 || i === 22 ? hex('#9c3d00') : shade(ORANGE, .93 + noise(i, j, 41) * .1));
+  L.rect(18, 24, 28, 33, (i, j, X, Y) => i === 0 || i === 27 || j === 32 ? hex('#3a3530') : i >= 24 ? shade(iron(X, Y, 42), .85) : i <= 2 ? shade(iron(X, Y, 42), 1.06) : iron(X, Y, 42));
+  for (const [x0, x1] of [[22, 29], [35, 42]]) {
+    L.rect(x0, 32, x1 - x0 + 1, 2, () => hex('#77736b'));
+    L.rect(x0 + 1, 34, x1 - x0 - 1, 3, (i, j) => j === 0 && i === (x0 < 32 ? 1 : x1 - x0 - 3) ? hex('#d9feff') : hex('#35d0e0'));
+  }
+  L.rect(30, 36, 4, 12, (i, j, X, Y) => shade(iron(X, Y, 43), i === 3 ? .78 : .9));
+  L.rect(26, 51, 12, 2, () => hex('#77736b'));
+  for (let y = 38; y < 56; y++) L.set(20 + (noise(y, 7) < .5 ? 0 : 1), y, noise(y, 8) < .5 ? VINE : VINE_L);
+  // casco: cúpula, cresta y ala
+  for (let y = 12; y < 24; y++) {
+    const half = Math.round(10 + Math.sqrt(Math.max(0, 1 - ((23 - y) / 12) ** 2)) * 7);
+    L.rect(32 - half, y, half * 2, 1, (i) => i < 4 && y < 20 ? hex('#ffe07a') : y === 23 ? hex('#c99200') : shade(Y_, .95 + noise(i, y, 44) * .08));
+  }
+  L.rect(30, 9, 4, 14, (i, j) => j === 0 ? hex('#c99200') : hex('#ffe07a'));
+  L.rect(12, 24, 40, 2, (i) => i === 0 || i === 39 ? hex('#c99200') : Y_);
+  L.rect(12, 26, 40, 1, () => hex('#7a5a00'));
+  L.rect(19, 27, 26, 1, (i, j, X, Y) => shade(iron(X, Y, 42), .72));             // sombra del ala en la frente
+  // baliza ámbar encendida sobre la cresta, con su halo
+  for (const [dx, dy] of [[-1, -1], [4, -1], [-1, 3], [4, 3], [-2, 1], [5, 1]]) L.set(30 + dx, 4 + dy, mix(PAPER, hex('#ffb000'), .45));
+  L.rect(30, 4, 4, 4, (i, j) => j === 0 ? hex('#fff0b0') : (i + j) % 2 ? hex('#ffd04a') : hex('#ffb000'));
+  L.rect(29, 8, 6, 1, () => hex('#3a3f45'));
+}
+// BuildGolem Link: un bloque holográfico (cian, con líneas de barrido) sobre su proyector amarillo
+const linkLogo = paper();
+{
+  const L = linkLogo, CY = hex('#35d0e0'), CYL = hex('#d9feff');
+  const inTop = (x, y) => Math.abs(x - 32) / 22 + Math.abs(y - 23) / 11 <= 1;
+  for (let y = 10; y < 60; y++) for (let x = 9; x < 56; x++) {
+    const i = (y * 64 + x) * 4, base = [L.px[i], L.px[i + 1], L.px[i + 2]];
+    const lt = 23 + (x - 10) / 2, rt = 34 - (x - 32) / 2;
+    let face = null;
+    if (inTop(x, y)) face = [hex('#7fe9f2'), .55];
+    else if (x >= 10 && x < 32 && y >= lt && y <= lt + 24) face = [CY, .45];
+    else if (x >= 32 && x <= 54 && y >= rt && y <= rt + 24) face = [hex('#1f8fa3'), .5];
+    if (!face) continue;
+    const scan = y % 3 === 0 ? .12 : 0;
+    L.set(x, y, mix(base, face[0], Math.min(1, face[1] + scan)));
+  }
+  const line = (x0, y0, x1, y1, c) => { const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)); for (let k = 0; k <= n; k++) L.set(Math.round(x0 + (x1 - x0) * k / n), Math.round(y0 + (y1 - y0) * k / n), c); };
+  for (const [a, b] of [[[32, 12], [54, 23]], [[54, 23], [32, 34]], [[32, 34], [10, 23]], [[10, 23], [32, 12]], [[10, 23], [10, 47]], [[54, 23], [54, 47]],
+    [[32, 34], [32, 58]], [[10, 47], [32, 58]], [[54, 47], [32, 58]]]) line(a[0], a[1], b[0], b[1], CYL);
+  // proyector y su haz
+  for (const x of [25, 39]) line(x, 57, x < 32 ? 10 : 54, 47, mix(PAPER, CYL, .7));
+  L.rect(24, 58, 16, 4, (i, j) => j === 0 ? hex('#fff0b0') : i === 0 || i === 15 || j === 3 ? hex('#7a5a00') : Y_);
+  L.rect(29, 57, 6, 1, () => hex('#d9feff'));
+}
+for (const [canvas, file] of [[golemLogo, 'golem/resources/buildgolem_logo.png'], [linkLogo, 'link/resources/buildgolem_link_logo.png']]) {
+  big(canvas).save(file);
+  big(canvas).save(join('logos', file.split('/').pop()));
+}
 
 // ── iconos para la web (../web/public/mod): los de los objetos y uno dibujado del casco (en el juego es un modelo 3D) ──
 const WEB = '../web/public/mod';

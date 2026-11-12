@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MIT
 package io.dualix.buildgolem.item;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.Holder;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.TooltipFlag;
+import java.util.List;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.InteractionHand;
@@ -13,9 +17,17 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 
-/** Casco de obra: pieza del gólem, y también te lo puedes poner (sin protección: es por estilo). */
+/**
+ * Casco de obra: pieza del gólem, y también te lo puedes poner (como cualquier cosa en la cabeza, quita un 25 % del daño de
+ * lo que cae encima). Con el chaleco reflectante, eres el capataz.
+ */
 public class HardHatItem extends Item implements Equipable {
     public HardHatItem(Properties p) { super(p); }
+
+    @Override
+    public void appendHoverText(ItemStack stack, TooltipContext ctx, List<Component> tip, TooltipFlag flag) {
+        tip.add(Component.translatable("item.buildgolem.foreman.tip").withStyle(ChatFormatting.GRAY));
+    }
 
     @Override
     public EquipmentSlot getEquipmentSlot() { return EquipmentSlot.HEAD; }

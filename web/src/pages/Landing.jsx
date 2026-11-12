@@ -215,7 +215,7 @@ function Tiers() {
 
 // los mods: la cadena de fabricación del gólem con sus texturas reales (public/mod) y las descargas
 const MOD_STEPS = [[1, ['builder_dust', 'blueprint_alloy', 'golem_core']], [2, ['hard_hat', 'hi_vis_vest', 'builder_golem']], [3, ['binder']], [4, ['blank_blueprint', 'blueprint']]];
-const MOD_FILES = [['BuildGolem Link', 'mod.client', '/mod/buildgolem_link-1.2.0+1.21.1.jar'], ['BuildGolem', 'mod.server', '/mod/buildgolem-1.0.0+1.21.1.jar']];
+const MOD_FILES = [['BuildGolem Link', 'mod.client', '/mod/buildgolem_link-1.4.0+1.21.1.jar'], ['BuildGolem', 'mod.server', '/mod/buildgolem-1.2.0+1.21.1.jar']];
 function Mods() {
   const { t } = useI18n(), root = useRef(null);
   useLayoutEffect(() => {

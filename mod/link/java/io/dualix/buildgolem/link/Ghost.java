@@ -13,7 +13,7 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 
 /**
  * Dibuja el holograma: los bloques que faltan (mallas horneadas por sección, ver GhostMesh) y, encima, contornos solo
- * para lo que importa: el marco del diseño, el siguiente bloque, los que están mal (rojo) o girados (amarillo)
+ * para lo que importa: el marco del diseño, el siguiente bloque, los que están mal (rojo), girados o a medias (amarillo)
  * y, si se construye por capas, los huecos de la capa actual.
  */
 final class Ghost {
@@ -46,10 +46,10 @@ final class Ghost {
         BlockPos me = mc.player.blockPosition();
         for (int i = 0; i < p.entries.size(); i++) {
             byte s = p.status[i];
-            if (s == Projection.WRONG || s == Projection.TURNED) {
+            if (s == Projection.WRONG || s == Projection.TURNED || s == Projection.PARTIAL) {
                 BlockPos pos = p.world(i);
                 if (pos.distSqr(me) > r2) continue;
-                if (s == Projection.WRONG) box(ps, lines, pos, 1f, .32f, .25f, 1f); else box(ps, lines, pos, 1f, .85f, .3f, 1f);
+                if (s == Projection.WRONG) box(ps, lines, pos, 1f, .32f, .25f, 1f); else box(ps, lines, pos, 1f, .85f, .3f, 1f);   // girado o con piezas por poner: amarillo
             } else if (s == Projection.MISSING && p.layer >= 0 && p.shown(i) && layerBoxes < MAX_LAYER_BOXES) {
                 BlockPos pos = p.world(i);
                 if (pos.distSqr(me) > r2) continue;

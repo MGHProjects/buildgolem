@@ -1,23 +1,22 @@
 ---
 name: ask-constraints
-description: Qué preguntar al jugador antes de diseñar, porque cambia el diseño entero. Una sola ronda de preguntas.
+description: Qué preguntar al jugador antes de diseñar (una sola ronda) y qué suponer si no contesta.
 ---
-# Preguntas que cambian el diseño
+# Condiciones del diseño
 
-Pregunta solo lo que falte, todo en una llamada a `ask_user`, con opciones cerradas cuando se pueda y una recomendada.
+Pregunta solo lo que falte y cambie el diseño entero: una llamada a `ask_user`, máximo 4 preguntas, opciones cerradas y la recomendada primero.
 
-| Tema | Por qué cambia todo | Opciones típicas |
-|---|---|---|
-| Energía | Generarla añade reactores, turbinas o paneles y mucho espacio | La traigo yo (cable / ender) · La genera la instalación · Mixta |
-| Red de objetos | Una red propia necesita controlador y almacenamiento; conectarse a la suya solo entradas | Red propia · Me conecto a mi red AE2/RS · Sin red |
-| Espacio | Manda en la distribución | Medidas exactas (ancho × fondo × alto) · Libre |
-| Ubicación | Hay máquinas que necesitan cielo o una dimensión concreta | Superficie · Bajo tierra · Otra dimensión |
-| Entradas por dónde | Dónde llegan cables y tuberías | Por abajo · Por los lados · Por arriba |
-| Progresión | Qué tiers puede fabricar ya | Inicial · Media · Final (máximo tier) |
-| Objetivo | Cuánto tiene que producir | Caudal (x/min) · "Lo máximo que quepa" |
-| Estilo | Decoración | Del mismo mod · Industrial · Libre |
+| Tema | Por qué cambia todo | Opciones | Si no contesta |
+|---|---|---|---|
+| Energía | Generarla añade generadores y mucho espacio | La traigo yo · La genera la instalación · Mixta | La trae él: deja marcado el punto de entrada |
+| Red de objetos | Una red propia necesita controlador y almacenamiento | Red propia · Me conecto a mi AE2/RS · Sin red | Se conecta a su AE2: deja marcada la entrada de la red |
+| Espacio | Manda en la distribución | Medidas (ancho × fondo × alto) · Libre | Libre y compacto, con pasillos de 2 |
+| Ubicación | Hay máquinas que necesitan cielo | Superficie · Bajo tierra · Otra dimensión | Superficie |
+| Progresión | Qué tiers puede fabricar | Inicial · Media · Final | Final: el mejor tier que haya en el workspace |
+| Objetivo | Cuánto produce | Caudal (x/min) · Lo máximo que quepa | Una línea completa de cada cadena pedida |
+| Estilo | Decoración | Del mismo mod · Industrial · Libre | Del mismo mod |
 
 Reglas:
-- Si el jugador ya lo dijo, no lo preguntes.
-- Máximo 4 preguntas por ronda; agrupa las menos importantes en "lo dejo a tu criterio".
-- Tras la respuesta, repite en una línea las condiciones que vas a usar.
+- No preguntes lo que ya dijo el jugador o se ve en el diseño.
+- Una sola ronda. "(a tu criterio)", sin respuesta o "sigue" = usa la columna "Si no contesta".
+- Después repite en una línea las condiciones que vas a usar y sigue trabajando.

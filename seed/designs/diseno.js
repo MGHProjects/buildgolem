@@ -64,7 +64,7 @@ export const P = {
   crya:   { n: 'Crystal Assembler', id: 'extendedae:crystal_assembler', side: 'extendedae:crystal_assembler/on', top: 'extendedae:crystal_assembler/top' },
   cut:    { n: 'Circuit Cutter', id: 'extendedae:circuit_cutter', all: 'extendedae:circuit_cutter/frame', front: 'extendedae:circuit_cutter/saw_on' },
   react:  { n: 'Reaction Chamber (AdvancedAE)', id: 'advanced_ae:reaction_chamber', side: 'advanced_ae:reaction_chamber_sides', top: 'advanced_ae:reaction_chamber_top', bottom: 'advanced_ae:reaction_chamber_bottom' },
-  grow:   { n: 'Growth Accelerator', id: 'ae2:growth_accelerator', side: 'ae2:growth_accelerator_side_on', top: 'ae2:growth_accelerator_top_on', bottom: 'ae2:growth_accelerator_bottom' },
+  grow:   { n: 'Growth Accelerator', id: 'ae2:growth_accelerator', side: 'ae2:growth_accelerator_side_on', top: 'ae2:growth_accelerator_top_on', bottom: 'ae2:growth_accelerator_bottom', props: { facing: 'up' } },
   budq:   { n: 'Flawless Budding Quartz', id: 'ae2:flawless_budding_quartz', all: 'ae2:flawless_budding_quartz' },
   bude:   { n: 'Budding Entro (ExtendedAE)', id: 'extendedae:entro_budding_fully', all: 'extendedae:entro_budding_fully' },
 
@@ -77,7 +77,7 @@ export const P = {
   sealamp: { n: 'Farol marino con incrustación (Chipped, siempre encendido)', id: 'chipped:inlayed_sea_lantern', all: 'chipped:sea_lantern/inlayed_sea_lantern', glow: true, dim: 0.6 },
   blamp:  { n: 'Lámpara de piedra negra (Supplementaries)', id: 'supplementaries:blackstone_lamp', side: 'supplementaries:blackstone_lamp', top: 'supplementaries:blackstone_lamp_top', glow: true, dim: 0.7 },
   wlight: { n: 'Aplique de pared blanco (Simply Light)', id: 'simplylight:wall_lamp', model: 'simplylight:block/wall_lamp', glow: true, dim: 1.1 },
-  sconce: { n: 'Candelabro de pared de almas (Supplementaries)', id: 'supplementaries:sconce_soul', model: 'supplementaries:block/sconce_wall_soul', glow: ['supplementaries:sconce_fire_soul'], dim: 1.2, yaw: 180 },
+  sconce: { n: 'Candelabro de pared de almas (Supplementaries)', id: 'supplementaries:sconce_wall_soul', model: 'supplementaries:block/sconce_wall_soul', glow: ['supplementaries:sconce_fire_soul'], dim: 1.2, yaw: 180 },
   slant:  { n: 'Farol de almas colgante', id: 'minecraft:soul_lantern', model: 'minecraft:block/soul_lantern_hanging', glow: true, dim: 0.9 },
   chain:  { n: 'Cadena', id: 'minecraft:chain', model: 'minecraft:block/chain' },
 };

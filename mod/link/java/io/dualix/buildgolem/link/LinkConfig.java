@@ -33,6 +33,23 @@ public final class LinkConfig {
         .comment("Al terminar una capa, pasar sola a la siguiente.")
         .define("autoNextLayer", true);
 
+    public enum HudMode { FULL, COMPACT, OFF }
+    public enum Corner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
+    public enum MoveMode { COMPASS, VIEW }
+
+    public static final ModConfigSpec.EnumValue<HudMode> HUD = B
+        .comment("Letrero con el progreso del diseño: FULL (todo), COMPACT (título y progreso) u OFF (nada).")
+        .defineEnum("hud", HudMode.FULL);
+    public static final ModConfigSpec.EnumValue<Corner> HUD_CORNER = B
+        .comment("Rincón de la pantalla donde va el letrero.")
+        .defineEnum("hudCorner", Corner.TOP_LEFT);
+    public static final ModConfigSpec.IntValue HUD_SCALE = B
+        .comment("Tamaño del letrero, en %.")
+        .defineInRange("hudScale", 100, 50, 150);
+    public static final ModConfigSpec.EnumValue<MoveMode> MOVE_MODE = B
+        .comment("Flechas para mover el holograma: COMPASS (arriba = norte, derecha = este, siempre igual) o VIEW (según hacia dónde miras).")
+        .defineEnum("arrows", MoveMode.COMPASS);
+
     public static final ModConfigSpec SPEC = B.build();
 
     public static boolean linked() { return !TOKEN.get().isBlank(); }
