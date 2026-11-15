@@ -70,7 +70,7 @@ final class Printer {
             BlockPos pos = p.world(i);
             double d = eye.distanceToSqr(Vec3.atCenterOf(pos));
             if (d > r2 || me.intersects(new AABB(pos))) continue;
-            Item item = p.want(i).getBlock().asItem();
+            Item item = p.itemFor(i);                                // en un cable de AE2, el cable (sus piezas se ponen luego a mano)
             if (item == Items.AIR || (!creative && slotOf(pl.getInventory(), item) < 0)) continue;
             Direction face = support(mc.level, pos, p.want(i));
             if (face == null) continue;
@@ -86,7 +86,11 @@ final class Printer {
     private static void learn(Projection p) {
         if (lastIndex < 0 || --checkIn > 0) return;
         byte s = lastIndex < p.status.length ? p.status[lastIndex] : Projection.UNKNOWN;
-        if (s == Projection.TURNED) { SAME_AS_LOOK.put(lastBlock, !lastSame); Actions.bar(Actions.t("auto.learned", lastBlock.getName())); }
+        // solo si lo que salió al revés es hacia dónde mira (girado también cuenta una escalera boca abajo, que no se aprende así)
+        var level = net.minecraft.client.Minecraft.getInstance().level;
+        if (s == Projection.TURNED && level != null && Projection.facing(level.getBlockState(p.world(lastIndex))) != Projection.facing(p.want(lastIndex))) {
+            SAME_AS_LOOK.put(lastBlock, !lastSame); Actions.bar(Actions.t("auto.learned", lastBlock.getName()));
+        }
         lastIndex = -1;
     }
 
@@ -119,7 +123,7 @@ final class Printer {
 
     private static boolean place(Minecraft mc, LocalPlayer pl, Projection p, int i, Direction toNeighbor, boolean creative) {
         BlockState want = p.want(i);
-        Item item = want.getBlock().asItem();
+        Item item = p.itemFor(i);
         Inventory inv = pl.getInventory();
         // 1. el bloque en la mano
         if (!inv.getItem(inv.selected).is(item)) {

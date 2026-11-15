@@ -39,12 +39,16 @@ public final class Plan extends SavedData {
     public long[] pos = new long[0];
     public int[] idx = new int[0];
     public final List<BlockState> palette = new ArrayList<>();
+    /** Datos de cada entrada de la paleta (solo cables de AE2: qué pieza va en cada cara y sus fachadas); null = ninguno. */
+    public final List<CompoundTag> data = new ArrayList<>();
 
     public int count() { return pos.length; }
 
     public BlockPos pos(int i) { return BlockPos.of(pos[i]); }
 
     public BlockState state(int i) { return palette.get(idx[i]); }
+
+    public CompoundTag data(int i) { return data.get(idx[i]); }
 
     public static String key(UUID id) { return "buildgolem_plan_" + id; }
 
@@ -89,6 +93,8 @@ public final class Plan extends SavedData {
         HolderGetter<Block> blocks = lookup.lookupOrThrow(Registries.BLOCK);
         ListTag pal = t.getList("palette", Tag.TAG_COMPOUND);
         for (int i = 0; i < pal.size(); i++) p.palette.add(NbtUtils.readBlockState(blocks, pal.getCompound(i)));
+        ListTag data = t.getList("data", Tag.TAG_COMPOUND);                 // planos de la versión 1.0 no lo tienen
+        for (int i = 0; i < p.palette.size(); i++) p.data.add(i < data.size() && !data.getCompound(i).isEmpty() ? data.getCompound(i) : null);
         p.pos = t.getLongArray("pos");
         p.idx = t.getIntArray("idx");
         if (p.idx.length != p.pos.length) { p.pos = new long[0]; p.idx = new int[0]; }
@@ -105,6 +111,9 @@ public final class Plan extends SavedData {
         ListTag pal = new ListTag();
         for (BlockState s : palette) pal.add(NbtUtils.writeBlockState(s));
         t.put("palette", pal);
+        ListTag dl = new ListTag();
+        for (CompoundTag d : data) dl.add(d == null ? new CompoundTag() : d);
+        t.put("data", dl);
         t.putLongArray("pos", pos);
         t.putIntArray("idx", idx);
         return t;

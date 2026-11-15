@@ -2,7 +2,7 @@
 // La interfaz (React) la pone quien lo monta: mountDesign devuelve un API con el estado y las acciones,
 // y emite eventos con on(fn): 'stats', 'view', 'hover', 'select', 'process', 'materials'.
 import * as THREE from 'three';
-import { createWorld, key, STEP } from './world.js';
+import { createWorld, key, DIR3 } from './world.js';
 import { createGeometry } from './geometry.js';
 import { createMesher } from './mesher.js';
 import { Viewer, pickGrid } from './viewer.js';
@@ -98,8 +98,8 @@ export function mountDesign(root, M, MODELS, opts = {}) {
     if (!vw) return null;
     const hit = pickGrid(viewer.ray(e.clientX, e.clientY), world.idx, vw.pick);
     if (!hit) return null;
-    const k = key(hit.b.x, hit.b.y, hit.b.z), parts = world.TERMAT.get(k), face = ([dx, dz]) => dx === hit.n[0] && dz === hit.n[2] && !hit.n[1];
-    const b = parts?.find(tt => face(STEP[tt.f])) || (hit.b.t === 'cable' && parts?.[0]) || hit.b;
+    const k = key(hit.b.x, hit.b.y, hit.b.z), parts = world.TERMAT.get(k), face = d => !!d && d.every((v, i) => v === (hit.n[i] || 0));
+    const b = parts?.find(tt => face(DIR3[tt.f])) || (hit.b.t === 'cable' && parts?.[0]) || hit.b;
     return { b, key: `${k},${b.t}` };
   }
   const at = c => c && world.AT.get(c.join(','));

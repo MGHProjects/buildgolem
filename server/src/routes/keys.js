@@ -44,7 +44,7 @@ keys.post('/keys/:id/test', async c => {
   const u = requireUser(c, 'write'), k = one('SELECT * FROM provider_keys WHERE id = ? AND user_id = ?', c.req.param('id'), u.id);
   if (!k) throw new HttpError(404, 'No existe');
   try {
-    const r = await chat({ provider: k.provider, apiKey: decrypt(MASTER_KEY, k.secret, u.id), baseUrl: k.base_url, model: k.model, messages: [{ role: 'user', content: 'Reply with the single word: ok' }], signal: AbortSignal.timeout(30_000) });
+    const r = await chat({ provider: k.provider, apiKey: decrypt(MASTER_KEY, k.secret, u.id), baseUrl: k.base_url, model: k.model, messages: [{ role: 'user', content: 'Reply with the single word: ok' }], signal: AbortSignal.timeout(90_000) });   // los modelos que razonan tardan; Cloudflare corta a los 100 s
     return c.json({ ok: true, reply: r.text.slice(0, 80) });
   } catch (e) { return c.json({ ok: false, error: e.message.slice(0, 300) }); }
 });

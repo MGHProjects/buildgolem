@@ -9,7 +9,7 @@ import { validateModel } from '../design/validate.js';
 
 export const designs = new Hono();
 const VIS = ['private', 'unlisted', 'public'];
-const slugOf = t => t.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'diseno';
+const slugOf = t => t.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'diseno';
 const card = d => ({ id: d.id, title: d.title, slug: d.slug, summary: d.summary, visibility: d.visibility, size: d.size ? JSON.parse(d.size) : null, blocks: d.blocks,
   workspaceId: d.workspace_id, updated: d.updated, created: d.created, author: d.author ? { name: d.author, handle: d.handle } : undefined });
 

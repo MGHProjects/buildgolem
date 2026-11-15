@@ -32,6 +32,10 @@ public final class BuildGolem {
     }
 
     private static void payloads(RegisterPayloadHandlersEvent e) {
-        e.registrar("1").optional().playToServer(PlanUpload.TYPE, PlanUpload.STREAM_CODEC, PlanUpload::handle);
+        var r = e.registrar("1").optional();
+        r.playToServer(PlanUpload.TYPE, PlanUpload.STREAM_CODEC, PlanUpload::handle);
+        r.playToServer(Stock.Request.TYPE, Stock.Request.STREAM_CODEC, Stock::handle);
+        // la respuesta solo se usa en el cliente con BuildGolem Link; la clase se carga al llegar el primer paquete
+        r.playToClient(Stock.Reply.TYPE, Stock.Reply.STREAM_CODEC, (msg, ctx) -> io.dualix.buildgolem.client.StockClient.apply(msg));
     }
 }

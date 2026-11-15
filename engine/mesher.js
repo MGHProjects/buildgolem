@@ -93,6 +93,10 @@ export function createMesher(world, geo) {
   function emitBox(c, dims, ctr, texOf, tint, addOf) { // pieza de cable o P2P, ya orientada en el mundo
     for (const f of boxFaces(...dims, ...ctr)) quad(bufFor(`solid|${texOf(f.n)}||0`), f.pts, f.uv, shadeOf(f.n), tint, addOf(f.n), ONE4, c.x + .5, c.y + .5, c.z + .5);
   }
+  function emitPanel(t) { // pieza en la cara de un cable (bus, panel de proveedor o de interfaz): placa de 12×12×2 contra esa cara
+    const d = { n: [0, 0, -1], s: [0, 0, 1], e: [1, 0, 0], w: [-1, 0, 0], u: [0, 1, 0], d: [0, -1, 0] }[t.f] || [0, 0, 1], tex = P[t.t].panel;
+    emitBox(t, d.map(v => (v ? .125 : .75)), d.map(v => v * .4375), () => tex, null, () => 0);
+  }
   function emitCables(cut) { // modo cables: cable denso real (núcleo + brazos hacia vecinos) y piezas P2P
     for (const b of GB) {
       if (!isCable(b) || b.y >= cut) continue;
@@ -125,7 +129,7 @@ export function createMesher(world, geo) {
     }
     if (cables) for (const b of GB) if (isCable(b) && b.y < cut) PICK[idx(b.x, b.y, b.z)] = b;
     for (const b of list) (P[b.t].ctm ? emitCtm : emitBlock)(b, ghostOf(b));
-    for (const t of TERMS) if (show(t)) emitBlock(t, false);
+    for (const t of TERMS) if (show(t)) (P[t.t].panel ? emitPanel : emitBlock)(t, false);
     if (cables) emitCables(cut);
     const group = new THREE.Group();
     for (const B of BUFS.values()) {

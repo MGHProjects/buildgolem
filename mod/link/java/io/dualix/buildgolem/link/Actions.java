@@ -92,13 +92,28 @@ public final class Actions {
         moved();
     }
 
-    /** Mueve el ancla un bloque según hacia dónde miras: adelante/atrás, izquierda/derecha y arriba/abajo. */
+    /** Hacia dónde es "adelante" para las flechas: el norte en modo brújula (no depende de la cámara) o hacia donde miras. */
+    public static Direction forward() {
+        return LinkConfig.MOVE_MODE.get() == LinkConfig.MoveMode.COMPASS ? Direction.NORTH : Minecraft.getInstance().player.getDirection();
+    }
+
+    /** Mueve el ancla un bloque: adelante/atrás, izquierda/derecha y arriba/abajo (ver forward()). */
     public static void nudgeView(int right, int up, int forward) {
         if (!need()) return;
-        Direction f = Minecraft.getInstance().player.getDirection(), r = f.getClockWise();
+        Direction f = forward(), r = f.getClockWise();
         Projection p = Projection.active;
         p.anchor = p.anchor.relative(f, forward).relative(r, right).above(up);
-        moved();
+        Direction d = up != 0 ? (up > 0 ? Direction.UP : Direction.DOWN) : forward != 0 ? (forward > 0 ? f : f.getOpposite()) : right > 0 ? r : r.getOpposite();
+        p.changed(); p.save();
+        bar(t("moved", t("dir." + d.getName()), p.anchor.getX(), p.anchor.getY(), p.anchor.getZ()));
+    }
+
+    /** Letrero: completo → compacto → oculto. */
+    public static void cycleHud() {
+        LinkConfig.HudMode[] m = LinkConfig.HudMode.values();
+        LinkConfig.HudMode next = m[(LinkConfig.HUD.get().ordinal() + 1) % m.length];
+        LinkConfig.HUD.set(next); LinkConfig.SPEC.save();
+        bar(t("opt.hud", t("opt.hud." + next.name().toLowerCase(java.util.Locale.ROOT))));
     }
 
     public static void rotate() {

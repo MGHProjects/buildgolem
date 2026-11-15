@@ -1,7 +1,7 @@
 // Indexador de workspace: recorre los jars del modpack (y el jar vanilla) y guarda un índice de bloques, recetas, tags y archivos.
 // El tamaño real de cada bloque sale de los extremos de los elementos de su modelo: la Isotopic Centrifuge (0..32 en y) ocupa 1×2×1.
 import { readdirSync, existsSync, readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, basename } from 'node:path';
 import { listZip, readEntry } from './zip.js';
 
 const TIER_ORDER = ['basic', 'advanced', 'elite', 'ultimate', 'overclocked', 'quantum', 'dense', 'multiversal', 'creative'];
@@ -14,9 +14,10 @@ export function tierOf(id) {
   return { family: `${ns}:${path.replace(TIER_RE, (_, a, t, b) => (a && b ? '_' : ''))}`, tier: m[2], rank: TIER_ORDER.indexOf(m[2]) };
 }
 
-// tamaño en bloques a partir de los extremos del modelo (en 1/16), con 1,5 px de tolerancia para salientes decorativos
+// tamaño en bloques a partir de los extremos del modelo (en 1/16), con 7,5 px de tolerancia para salientes decorativos
 export function sizeOf(min, max) {
-  const lo = min.map(v => Math.floor((v + 1.5) / 16)), hi = max.map(v => Math.ceil((v - 1.5) / 16));
+  // lo que sobresale menos de medio bloque (el cañón de un cañón, la llama de un quemador, el enlace de redstone) es adorno: no ocupa otra celda
+  const lo = min.map(v => Math.floor((v + 7.5) / 16)), hi = max.map(v => Math.ceil((v - 7.5) / 16));
   return { size: hi.map((h, i) => Math.max(1, h - lo[i])), offset: lo };
 }
 
@@ -46,6 +47,7 @@ export class Pack {
 // ── modelos: cadena de parent, variables de textura y modelos compuestos (factorías de Mekanism) ──
 export function resolveModel(pack, ref, depth = 0) {
   if (depth > 12) return [];
+  if (typeof ref === 'string' && /^[^:]+:item\//.test(ref)) return itemModel(pack, ref);
   const m = typeof ref === 'string' ? loadModel(pack, ref) : ref;
   if (!m) return [];
   if (m.loader === 'neoforge:composite' || m.loader === 'forge:composite') return Object.values(m.children || {}).flatMap(ch => resolveModel(pack, ch, depth + 1));
@@ -62,11 +64,78 @@ export function resolveModel(pack, ref, depth = 0) {
     const [ns, p] = (v.includes(':') ? v : 'minecraft:' + v).split(':');
     return `${ns}:${p.startsWith('block/') ? p.slice(6) : p}`;
   };
+  if (!elements && depth === 0 && typeof ref === 'string') {
+    // modelo sin geometría (lo pinta el código del mod: reactor de Powah, cofres…): sin esto el bloque no se ve en el visor.
+    // shortcut: cubo con la textura del bloque o su partícula; el aspecto real necesitaría el renderizador del mod
+    const [ns, p] = (ref.includes(':') ? ref : 'minecraft:' + ref).split(':'), name = p.split('/').pop();
+    const own = `assets/${ns}/textures/block/${name}.png`, tex = (pack.has ? pack.has(own) : pack.files?.[own]) ? `${ns}:${name}` : texOf('#particle');
+    if (tex) return [{ from: [0, 0, 0], to: [16, 16, 16], faces: Object.fromEntries(['north', 'south', 'east', 'west', 'up', 'down'].map(d => [d, { texture: tex, uv: [0, 0, 16, 16] }])) }];
+  }
   return (elements || []).map(e => ({ ...e, faces: Object.fromEntries(Object.entries(e.faces || {}).map(([k, f]) => [k, { ...f, texture: texOf(f.texture) }]).filter(([, f]) => f.texture)) }));
 }
+// objeto expuesto en el visor: "ns:item/x" de pie sobre un pedestal (centrado, abajo en la celda) y "ns:item/x.flat" en un marco
+// (pegado a la cara de atrás, como el modelo item_frame que mira al norte). Plano: su icono; bloque o modelo con elementos: a escala;
+// dibujado por el mod (builtin/entity): un cubito con su textura, que es lo único que hay
+const scaleEls = (els, k, [tx, ty, tz]) => els.map(e => {
+  const f = v => v.map((c, i) => 8 + (c - 8) * k + [tx, ty, tz][i]);
+  return { ...e, from: f(e.from), to: f(e.to), rotation: e.rotation && { ...e.rotation, origin: f(e.rotation.origin) } };
+});
+function itemModel(pack, ref) {
+  const flat = ref.endsWith('.flat'), id = flat ? ref.slice(0, -5) : ref;
+  let m = loadModel(pack, id), tex = {}, kind = null, parent = null;
+  for (let i = 0; m && i < 12; i++) {
+    tex = { ...(m.textures || {}), ...tex };
+    const par = String(m.parent || '').replace(/^minecraft:/, '');
+    if (m.elements) { kind = 'elements'; parent = m; break; }
+    if (/^(item|builtin)\/(generated|handheld)/.test(par) || /handheld|generated/.test(par)) { kind = 'flat'; break; }
+    if (/^builtin\/entity/.test(par)) { kind = '3d'; break; }
+    if (/(^|:)block\//.test(par)) { kind = 'block'; parent = par; break; }
+    m = par ? loadModel(pack, par) : null;
+  }
+  const at = flat ? [0, 0, 6.5] : [0, -2.5, 0];
+  if (kind === 'flat') {
+    let t = tex.layer0;
+    for (let i = 0; typeof t === 'string' && t.startsWith('#') && i < 8; i++) t = tex[t.slice(1)];
+    if (typeof t !== 'string') return [];
+    const [ns, p] = (t.includes(':') ? t : 'minecraft:' + t).split(':'), key = `${ns}:${p}`;
+    if (flat) return [{ from: [3, 3, 15.4], to: [13, 13, 15.4], faces: { south: { texture: key, uv: [0, 0, 16, 16] }, north: { texture: key, uv: [16, 0, 0, 16] } } }];
+    // de pie: dos planos en cruz a 45°, como las flores, para que se vea desde cualquier lado
+    const rot = { origin: [8, 8, 8], axis: 'y', angle: 45 };
+    return [{ from: [3, 1, 8], to: [13, 11, 8], rotation: rot, faces: { south: { texture: key, uv: [0, 0, 16, 16] }, north: { texture: key, uv: [16, 0, 0, 16] } } },
+      { from: [8, 1, 3], to: [8, 11, 13], rotation: rot, faces: { east: { texture: key, uv: [0, 0, 16, 16] }, west: { texture: key, uv: [16, 0, 0, 16] } } }];
+  }
+  if (kind === 'block' || kind === 'elements') return scaleEls(kind === 'block' ? resolveModel(pack, parent, 1) : resolveModel(pack, { ...parent, textures: tex }, 1), .5, at);
+  if (kind === '3d') {
+    const [ns, name] = id.split(':'), key = `${ns}:${name}`;
+    if (!(pack.has ? pack.has(`assets/${ns}/textures/${name}.png`) : pack.files?.[`assets/${ns}/textures/${name}.png`])) return [];
+    return scaleEls([{ from: [0, 0, 0], to: [16, 16, 16], faces: Object.fromEntries(['north', 'south', 'east', 'west', 'up', 'down'].map(d => [d, { texture: key, uv: [0, 0, 16, 16] }])) }], .375, flat ? [0, 0, 5] : [0, -3, 0]);
+  }
+  return [];
+}
+
+// objetos del modpack (trofeos que exponer): los que tienen nombre en el idioma; las variantes de modelo (_throwing, _blocking…) no
+export function itemIndex(pack, en = langMap(pack, 'en_us'), es = langMap(pack, 'es_es')) {
+  const items = [];
+  for (const p of pack.paths(/^assets\/[^/]+\/models\/item\/[^/]+\.json$/)) {
+    const [, ns, name] = p.match(/^assets\/([^/]+)\/models\/item\/([^/]+)\.json$/), nm = en[`item.${ns}.${name}`] || en[`block.${ns}.${name}`];
+    if (!nm || /_spawn_egg$/.test(name)) continue;
+    items.push({ id: `${ns}:${name}`, name: nm, nameEs: es[`item.${ns}.${name}`] || es[`block.${ns}.${name}`] || null });
+  }
+  return items;
+}
+
 function loadModel(pack, ref) {
   const [ns, p] = (ref.includes(':') ? ref : 'minecraft:' + ref).split(':');
   return pack.json(`assets/${ns}/models/${p}.json`);
+}
+
+// manuales que traen los mods: GuideME (assets/<mod>/guides|ae2guide|mi_guidebook/**.md, sin las traducciones _xx_xx) y libros Patchouli en inglés
+export const DOC = /^assets\/[^/]+\/(guides|ae2guide|mi_guidebook)\/(?!(?:.*\/)?_[a-z]{2}_[a-z]{2}\/).+\.md$|^(assets|data)\/[^/]+\/patchouli_books\/.+\/en_us\/.+\.json$/;
+// dónde está cada archivo que se lee después: texturas, modelos y estados para el visor, y recetas y manuales de los mods para los agentes
+export function fileIndex(pack, dir) {
+  const files = {};
+  for (const [k, [ji, e]] of pack.files) if (/^assets\/[^/]+\/(textures\/.+\.png(\.mcmeta)?|models\/.+\.json|blockstates\/.+\.json)$|^data\/[^/]+\/recipes?\/.+\.json$/.test(k) || DOC.test(k)) files[k] = e.file ? [ji, -1, 0, 0, -1, relative(dir, e.file)] : [ji, e.offset, e.csize, e.usize, e.method];
+  return files;
 }
 
 // variante por defecto de un blockstate y la rotación de su variante facing=north (para orientar el modelo)
@@ -132,23 +201,36 @@ export function buildIndex(dir, jars, onProgress = () => {}) {
   }
   onProgress('Licencias');
   const licenses = modLicenses(jars);
-  const files = {};
-  for (const [k, [ji, e]] of pack.files) if (/^assets\/[^/]+\/(textures\/.+\.png(\.mcmeta)?|models\/.+\.json|blockstates\/.+\.json)$/.test(k)) files[k] = e.file ? [ji, -1, 0, 0, -1, relative(dir, e.file)] : [ji, e.offset, e.csize, e.usize, e.method];
+  const files = fileIndex(pack, dir);
   mkdirSync(join(dir, 'index'), { recursive: true });
   const w = (n, v) => writeFileSync(join(dir, 'index', n), JSON.stringify(v));
-  w('blocks.json', blocks); w('recipes.json', recipes); w('tags.json', tags); w('licenses.json', licenses); w('files.json', { jars: jars.map(j => relative(dir, j)), files });
+  w('blocks.json', blocks); w('items.json', itemIndex(pack, en, es)); w('recipes.json', recipes); w('tags.json', tags); w('licenses.json', licenses); w('files.json', { jars: jars.map(j => relative(dir, j)), files });
   const mods = new Set(blocks.map(b => b.id.split(':')[0]));
   return { blocks: blocks.length, recipes: recipes.length, tags: Object.keys(tags).length, textures: Object.keys(files).filter(k => k.endsWith('.png')).length, mods: mods.size, multiCell: blocks.filter(b => b.size.some(s => s > 1)).length };
 }
 
-// lista los jars de un workspace: mods/*.jar más el vanilla
+// lista los jars de un workspace: mods/*.jar (y los mods que traen dentro) más el vanilla
 export function workspaceJars(dir) {
   const mods = join(dir, 'files', 'mods'), out = [];
-  if (existsSync(mods)) for (const f of readdirSync(mods)) if (f.endsWith('.jar') && statSync(join(mods, f)).size > 0) out.push(join(mods, f));
+  if (existsSync(mods)) for (const f of readdirSync(mods)) if (f.endsWith('.jar') && statSync(join(mods, f)).size > 0) out.push(join(mods, f), ...nestedMods(dir, join(mods, f)));
   const kubejs = join(dir, 'files', 'kubejs');
   if (existsSync(kubejs)) out.unshift(kubejs);                       // los assets y recetas de KubeJS mandan sobre los de los mods
   const vanilla = join(dir, 'vanilla.jar');
   if (existsSync(vanilla)) out.push(vanilla);
+  return out;
+}
+// un jar «bundled» trae mods dentro (META-INF/jarjar; Create Aeronautics trae aeronautics, simulated y offroad): se sacan a
+// jarjar/ y se indexan como uno más. Las librerías sin assets ni data no aportan nada y se quedan fuera.
+export function nestedMods(dir, jar) {
+  let inner; try { inner = listZip(jar).filter(e => /^META-INF\/jarjar\/[^/]+\.jar$/.test(e.name)); } catch { return []; }
+  const out = [];
+  for (const e of inner) {
+    const to = join(dir, 'jarjar', basename(e.name));
+    try {
+      if (!existsSync(to)) { mkdirSync(join(dir, 'jarjar'), { recursive: true }); writeFileSync(to, readEntry(jar, e)); }
+      if (listZip(to).some(x => /^(assets|data)\//.test(x.name))) out.push(to);
+    } catch { /* jar interno roto: se ignora */ }
+  }
   return out;
 }
 export const readIndex = (dir, name) => JSON.parse(readFileSync(join(dir, 'index', name), 'utf8'));

@@ -34,7 +34,8 @@ public final class Keys {
     public static final KeyMapping ROTATE = key("rotate", InputConstants.UNKNOWN.getValue());
     public static final KeyMapping AUTO = key("auto_place", InputConstants.UNKNOWN.getValue());
     public static final KeyMapping TOGGLE = key("toggle", InputConstants.UNKNOWN.getValue());
-    private static final KeyMapping[] ALL = { MENU, LAYER_UP, LAYER_DOWN, MOVE_UP, MOVE_DOWN, MOVE_FWD, MOVE_BACK, MOVE_LEFT, MOVE_RIGHT, ROTATE, AUTO, TOGGLE };
+    public static final KeyMapping HUD = key("hud", InputConstants.UNKNOWN.getValue());
+    private static final KeyMapping[] ALL = { MENU, LAYER_UP, LAYER_DOWN, MOVE_UP, MOVE_DOWN, MOVE_FWD, MOVE_BACK, MOVE_LEFT, MOVE_RIGHT, ROTATE, AUTO, TOGGLE, HUD };
     private static final Map<KeyMapping, Runnable> DO = new HashMap<>();
     private static final Map<KeyMapping, Long> HELD = new HashMap<>();
     private static final long FIRST_REPEAT = 350, EVERY = 110;   // ms
@@ -52,6 +53,7 @@ public final class Keys {
         DO.put(ROTATE, Actions::rotate);
         DO.put(AUTO, Printer::toggle);
         DO.put(TOGGLE, Actions::toggle);
+        DO.put(HUD, Actions::cycleHud);
     }
 
     static void register(RegisterKeyMappingsEvent e) { for (KeyMapping k : ALL) e.register(k); }

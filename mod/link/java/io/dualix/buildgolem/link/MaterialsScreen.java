@@ -9,14 +9,23 @@ import net.minecraft.world.item.Items;
 
 import java.util.List;
 
-/** Lo que falta por poner contra lo que llevas. Clic en un bloque: el holograma enseña solo ese. */
+/** Lo que falta por poner contra lo que tienes (inventario y, con el mod del gólem, sus cofres). Clic en un bloque: el holograma enseña solo ese. */
 final class MaterialsScreen extends Screen {
     private static final int TOP = 40, ROW = 20, ACCENT = 0xFFFFC21A, MUTED = 0xFF9AA4AE, TEXT = 0xFFEEF1F4;
     private final Screen back;
     private List<Projection.Material> rows = List.of();
-    private int scroll;
+    private int scroll, stock = Projection.stockVersion;
 
-    MaterialsScreen(Screen back) { super(Actions.t("materials.title")); this.back = back; }
+    MaterialsScreen(Screen back) {
+        super(Actions.t("materials.title"));
+        this.back = back;
+        if (Projection.stockRefresh != null) Projection.stockRefresh.run();   // la respuesta llega en unos ticks y la lista se rehace sola
+    }
+
+    @Override
+    public void tick() {
+        if (stock != Projection.stockVersion) { stock = Projection.stockVersion; rebuildWidgets(); }
+    }
 
     @Override
     protected void init() {
@@ -65,6 +74,7 @@ final class MaterialsScreen extends Screen {
         if (super.mouseClicked(mx, my, button)) return true;
         int i = rowAt(mx, my);
         if (i < 0) return false;
+        if (rows.get(i).block() == null) return true;                       // una pieza de cable: no hay bloque por el que filtrar
         Actions.filter(rows.get(i).block());
         minecraft.setScreen(null);
         return true;
@@ -75,7 +85,7 @@ final class MaterialsScreen extends Screen {
         super.render(g, mx, my, pt);
         int x = left();
         g.drawCenteredString(font, title, width / 2, 8, ACCENT);
-        g.drawCenteredString(font, Actions.t("materials.hint"), width / 2, 19, MUTED);
+        g.drawCenteredString(font, Actions.t(Projection.stockRefresh != null ? "materials.hint.golem" : "materials.hint"), width / 2, 19, MUTED);
         if (rows.isEmpty()) { g.drawCenteredString(font, Actions.t("materials.done"), width / 2, TOP + 20, TEXT); return; }
         g.drawString(font, Actions.t("materials.need"), x + 230, TOP - 10, MUTED, false);
         g.drawString(font, Actions.t("materials.have"), x + 278, TOP - 10, MUTED, false);
@@ -85,7 +95,7 @@ final class MaterialsScreen extends Screen {
         for (int r = 0; r < visible() && scroll + r < rows.size(); r++) {
             Projection.Material m = rows.get(scroll + r);
             int y = TOP + r * ROW;
-            if (p != null && p.filter == m.block()) g.fill(x, y, x + 360, y + ROW - 1, 0x44FFC21A);
+            if (p != null && m.block() != null && p.filter == m.block()) g.fill(x, y, x + 360, y + ROW - 1, 0x44FFC21A);
             else if (scroll + r == hover) g.fill(x, y, x + 360, y + ROW - 1, 0x33FFFFFF);
             if (m.item() != Items.AIR) g.renderItem(new ItemStack(m.item()), x + 2, y + 1);
             g.drawString(font, font.plainSubstrByWidth(m.name(), 200), x + 22, y + 6, TEXT, false);

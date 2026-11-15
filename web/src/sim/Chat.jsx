@@ -1,7 +1,7 @@
 // Conversación con los agentes sobre un diseño: preguntas con opciones, pasos del agente en vivo y recarga si edita el diseño.
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { PaperPlaneRight, ArrowCounterClockwise, X } from '@phosphor-icons/react';
+import { PaperPlaneRight, ArrowCounterClockwise, X, Stop } from '@phosphor-icons/react';
 import { useI18n } from '../i18n.jsx';
 import { api, chatStream } from '../api.js';
 import { Button, IconButton, Loading, ErrorNote } from '../ui.jsx';
@@ -26,36 +26,55 @@ function Questions({ qs, onAnswer }) {
   );
 }
 
+// tiempo del turno: con modelos que razonan un turno largo es normal, y así se ve que sigue vivo
+function Elapsed({ since }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const i = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(i); }, []);
+  const s = Math.max(0, Math.round((now - since) / 1000));
+  return <span className="tabular-nums">{Math.floor(s / 60)}:{String(s % 60).padStart(2, '0')}</span>;
+}
+
 export default function Chat({ design, onDesignChanged, onClose }) {
   const { t, lang } = useI18n();
   const [agents, setAgents] = useState([]), [keys, setKeys] = useState(null), [agent, setAgent] = useState('orchestrator'), [msgs, setMsgs] = useState([]);
   const [text, setText] = useState(''), [busy, setBusy] = useState(false), [events, setEvents] = useState([]), [err, setErr] = useState(null);
+  const [reconn, setReconn] = useState(false), [since, setSince] = useState(0), [shot, setShot] = useState(null);
   const end = useRef(null), ctl = useRef(null);
-  useEffect(() => {
-    api('/agents').then(setAgents); api('/keys').then(setKeys).catch(() => setKeys([]));
-    api(`/designs/${design.id}/chat`).then(setMsgs).catch(() => {});
-    return () => ctl.current?.abort();
-  }, [design.id]);
-  useEffect(() => { end.current?.scrollIntoView({ block: 'end' }); }, [msgs, events]);
-  const send = async message => {
-    if (!message.trim() || busy) return;
-    setErr(null); setBusy(true); setEvents([]); setText('');
-    setMsgs(m => [...m, { role: 'user', content: message }]);
+  // payload null = engancharse a un turno que ya está en marcha (si no hay ninguno, el servidor responde 204 y no pasa nada)
+  const follow = async payload => {
+    setErr(null); setEvents([]); setReconn(false); setShot(null);
+    if (payload) { setBusy(true); setSince(Date.now()); }
     ctl.current = new AbortController();
     let reload = false;
     try {
-      await chatStream(design.id, { message, agent }, ev => {
-        if (ev.type === 'text' && ev.final) setMsgs(m => [...m, { role: 'assistant', content: ev.text }]);
-        else if (ev.type === 'ask') setMsgs(m => [...m, { role: 'assistant', asked: true, content: JSON.stringify({ questions: ev.questions }) }]);
-        else if (ev.type === 'error') setErr(ev.text);
-        else if (ev.type === 'done') reload = ev.reload;
-        else setEvents(e => [...e.slice(-40), ev]);
-        if (ev.type === 'result' && (ev.name === 'edit_design' || ev.name === 'set_process')) reload = true;
+      await chatStream(design.id, payload, ev => {
+        if (ev.type === 'reconnecting') return setReconn(true);
+        setReconn(false); setBusy(true);
+        if (ev.n === 0 && ev.at) setSince(ev.at);
+        if (ev.type === 'error') setErr(ev.text);
+        if ((ev.type === 'done' || ev.type === 'error') && ev.reload) reload = true;
+        if (ev.type === 'tool' || ev.type === 'step') setEvents(e => [...e.slice(-40), ev]);
+        if (ev.type === 'result' && ev.image) setShot(ev.image);                // render_design: lo que ve el agente
       }, ctl.current.signal);
-    } catch (x) { if (x.name !== 'AbortError') setErr(x.message); }
-    setBusy(false);
+    } catch (x) { if (x.name === 'AbortError') return; setErr(x.message); }
+    setBusy(false); setReconn(false);
+    api(`/designs/${design.id}/chat`).then(setMsgs).catch(() => {});   // el historial del servidor manda: respuesta final, preguntas o aviso de corte
     if (reload) onDesignChanged();
   };
+  useEffect(() => {
+    api('/agents').then(setAgents); api('/keys').then(setKeys).catch(() => setKeys([]));
+    api(`/designs/${design.id}/chat`).then(setMsgs).catch(() => {});
+    follow(null);
+    return () => ctl.current?.abort();                                  // cerrar el chat no para el turno: sigue en el servidor
+  }, [design.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { end.current?.scrollIntoView({ block: 'end' }); }, [msgs, events]);
+  const send = async message => {
+    if (!message.trim() || busy) return;
+    setText('');
+    setMsgs(m => [...m, { role: 'user', content: message }]);
+    await follow({ message, agent });
+  };
+  const stop = () => api(`/designs/${design.id}/chat/stop`, { method: 'POST', body: {} }).catch(() => {});
   const lastAsk = [...msgs].reverse().find((m, i) => m.asked && i === 0);
   const current = agents.find(a => a.name === agent);
   return (
@@ -78,9 +97,14 @@ export default function Chat({ design, onDesignChanged, onClose }) {
         {keys?.length > 0 && !msgs.length && <p className="text-sm leading-relaxed text-muted">{t('chat.empty')}</p>}
         {msgs.map((m, i) => m.asked ? (m === lastAsk && !busy ? <Questions key={i} qs={JSON.parse(m.content).questions} onAnswer={send} /> : null)
           : <div key={i} className={`max-w-[94%] whitespace-pre-wrap rounded-[6px] border px-3 py-2 text-sm leading-relaxed ${m.role === 'user' ? 'ml-auto border-accent/40 bg-accent/10' : 'border-line bg-bg'}`}>{m.content}</div>)}
-        {busy && <ol className="grid gap-1 border-l border-ink/40 pl-3 font-mono text-xs text-muted" aria-label={t('ed.thinking')}>
-          {events.filter(e => e.type === 'tool' || e.type === 'step').slice(-8).map((e, i) => <li key={i}>{e.type === 'step' ? `→ ${e.agent}` : `${e.agent} · ${e.name}`}</li>)}
-          <li className="animate-pulse text-ink">{t('ed.thinking')}…</li></ol>}
+        {busy && <div className="grid gap-2">
+          <ol className="grid gap-1 border-l border-ink/40 pl-3 font-mono text-xs text-muted" aria-label={t('ed.thinking')}>
+            {events.slice(-8).map((e, i) => <li key={i}>{e.type === 'step' ? `→ ${e.agent}` : `${e.agent} · ${e.name}`}</li>)}
+            <li className="animate-pulse text-ink">{reconn ? t('chat.reconnecting') : t('ed.thinking')}… {since > 0 && <Elapsed since={since} />}</li>
+          </ol>
+          {shot && <figure className="grid gap-1"><img src={shot} alt={t('chat.seen')} className="w-full rounded-[6px] border border-line" /><figcaption className="text-xs text-muted">{t('chat.seen')}</figcaption></figure>}
+          <div><Button size="sm" variant="secondary" onClick={stop}><Stop size={14} aria-hidden="true" />{t('chat.stop')}</Button></div>
+        </div>}
         <ErrorNote error={err} />
         <div ref={end} />
       </div>

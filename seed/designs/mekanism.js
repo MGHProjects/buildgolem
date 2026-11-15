@@ -113,7 +113,7 @@ export const P = {
   lite:   { n: 'Bloque iluminante azul claro (Simply Light, siempre encendido)', id: 'simplylight:illuminant_light_blue_block_on', model: 'simplylight:block/illuminant_light_blue_block_on', glow: true },
   rod:    { n: 'Lámpara de varilla azul clara (Simply Light)', id: 'simplylight:rodlamp_light_blue', model: 'simplylight:block/rodlamp_light_blue', glow: true },
   // cables tapados
-  fme:    { n: 'ME Dense Cable con fachada de hierro industrial', id: 'ae2:fluix_covered_dense_cable', side: 'create:industrial_iron_block', top: 'create:industrial_iron_block_top' },
+  fme:    { n: 'ME Dense Cable con fachada de hierro industrial', id: 'ae2:fluix_covered_dense_cable',  facade: 'create:industrial_iron_block', side: 'create:industrial_iron_block', top: 'create:industrial_iron_block_top' },
   fuc:    { n: 'Ultimate Universal Cable con tapa de acero (Mekanism Covers)', id: 'mekanism:ultimate_universal_cable', all: 'mekanism:block_steel' },
   entry:  { n: 'ENTRADA ME · aquí llega un cable denso de tu controlador, por debajo', id: 'ae2:fluix_covered_dense_cable', all: 'ae2:part/cable/dense_smart/cyan', glow: true },
   eentry: { n: 'Entrada de energía (opcional) · tu cable llega por debajo', id: 'mekanism:ultimate_universal_cable', all: 'mekanism:block_steel' },

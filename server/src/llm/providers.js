@@ -3,7 +3,7 @@ import { safeFetch, assertPublicUrl } from '../security.js';
 
 // free: cómo conseguir acceso gratis (revisado 2026-11; los límites cambian a menudo)
 export const PROVIDERS = {
-  gemini: { name: 'Google Gemini', base: 'https://generativelanguage.googleapis.com/v1beta/openai', protocol: 'openai', models: ['gemini-2.5-flash', 'gemini-2.5-pro'],
+  gemini: { name: 'Google Gemini', base: 'https://generativelanguage.googleapis.com/v1beta/openai', protocol: 'openai', models: ['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.8-flash'],
     keyUrl: 'https://aistudio.google.com/apikey', free: { es: 'Gratis en Google AI Studio con cuenta de Google. Los prompts del plan gratis pueden usarse para mejorar sus productos.', en: 'Free in Google AI Studio with a Google account. Free-tier prompts may be used to improve their products.' } },
   groq: { name: 'Groq', base: 'https://api.groq.com/openai/v1', protocol: 'openai', models: ['openai/gpt-oss-120b', 'moonshotai/kimi-k2-instruct'],
     keyUrl: 'https://console.groq.com/keys', free: { es: 'Plan gratis con límites por modelo (peticiones por minuto y por día). Muy rápido.', en: 'Free plan with per-model limits (requests per minute and per day). Very fast.' } },
@@ -45,14 +45,16 @@ async function call(url, headers, payload, signal) {
 
 async function openaiChat(base, key, model, messages, tools, signal) {
   const msgs = messages.map(m => m.role === 'tool' ? { role: 'tool', tool_call_id: m.toolCallId, content: m.content }
-    : m.toolCalls?.length ? { role: 'assistant', content: m.content || null, tool_calls: m.toolCalls.map(t => ({ id: t.id, type: 'function', function: { name: t.name, arguments: JSON.stringify(t.args) } })) }
+    : m.toolCalls?.length ? { role: 'assistant', content: m.content || null, tool_calls: m.toolCalls.map(t => ({ id: t.id, type: 'function', function: { name: t.name, arguments: JSON.stringify(t.args) }, ...(t.extra && { extra_content: t.extra }) })) }
+    : m.images?.length ? { role: m.role, content: [{ type: 'text', text: m.content || '' }, ...m.images.map(im => ({ type: 'image_url', image_url: { url: `data:${im.mime};base64,${im.data}` } }))] }
     : { role: m.role, content: m.content });
   const payload = { model, messages: msgs };
   if (tools?.length) payload.tools = tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
   const j = await call(`${base}/chat/completions`, { authorization: `Bearer ${key}` }, payload, signal);
   const m = j.choices?.[0]?.message || {};
   return { text: m.content || '', usage: j.usage,
-    toolCalls: (m.tool_calls || []).map(t => ({ id: t.id, name: t.function.name, args: safeJson(t.function.arguments) })) };
+    // Gemini 3 firma cada llamada (extra_content.google.thought_signature) y exige recibirla de vuelta: sin ella responde 400
+    toolCalls: (m.tool_calls || []).map(t => ({ id: t.id, name: t.function.name, args: safeJson(t.function.arguments), ...(t.extra_content && { extra: t.extra_content }) })) };
 }
 
 async function anthropicChat(base, key, model, messages, tools, signal) {
@@ -65,7 +67,11 @@ async function anthropicChat(base, key, model, messages, tools, signal) {
       if (last?.role === 'user' && Array.isArray(last.content) && last.content.every(b => b.type === 'tool_result')) last.content.push(block);
       else out.push({ role: 'user', content: [block] });
     } else if (m.toolCalls?.length) out.push({ role: 'assistant', content: [...(m.content ? [{ type: 'text', text: m.content }] : []), ...m.toolCalls.map(t => ({ type: 'tool_use', id: t.id, name: t.name, input: t.args }))] });
-    else out.push({ role: m.role, content: m.content });
+    else if (m.images?.length) {
+      // imagen tras los resultados de herramientas: va en el mismo turno del usuario
+      const blocks = [...m.images.map(im => ({ type: 'image', source: { type: 'base64', media_type: im.mime, data: im.data } })), { type: 'text', text: m.content || '' }], last = out.at(-1);
+      if (last?.role === 'user' && Array.isArray(last.content)) last.content.push(...blocks); else out.push({ role: 'user', content: blocks });
+    } else out.push({ role: m.role, content: m.content });
   }
   const payload = { model, max_tokens: 4096, system, messages: out };
   if (tools?.length) payload.tools = tools.map(t => ({ name: t.name, description: t.description, input_schema: t.parameters }));

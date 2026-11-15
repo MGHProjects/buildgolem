@@ -9,6 +9,8 @@ version="${mod_version}"
 displayName="${mod_name}"
 displayURL="https://buildgolem.dualix.io"
 authors="MGH Projects"
+logoFile="buildgolem_link_logo.png"
+logoBlur=false
 description='''
 Connects Minecraft with your BuildGolem account: pick a design, project it as a hologram in your world and build it layer by layer with the material list.
 Client only: it works on any server without installing anything there.

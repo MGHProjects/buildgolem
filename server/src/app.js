@@ -63,7 +63,7 @@ export function createApp() {
   app.post('/api/designs/:id/models', async c => {
     const d = designFor(c), b = await body(c);
     if (!d.workspace_id) return c.json({});
-    const refs = (Array.isArray(b.refs) ? b.refs : []).filter(r => typeof r === 'string' && /^[\w:./+-]{3,300}$/.test(r)).slice(0, 400);
+    const refs = (Array.isArray(b.refs) ? b.refs : []).filter(r => typeof r === 'string' && /^[\w:./+@,-]{3,300}$/.test(r)).slice(0, 400);
     return c.json(reader(d.workspace_id).models(refs));
   });
   app.post('/api/designs/:id/look', async c => {

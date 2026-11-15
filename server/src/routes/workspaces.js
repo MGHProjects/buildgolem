@@ -164,7 +164,7 @@ workspaces.get('/workspaces/:id/tex/*', c => {
 });
 workspaces.post('/workspaces/:id/models', async c => {
   const w = own(c), b = await body(c);
-  const refs = (Array.isArray(b.refs) ? b.refs : []).filter(r => typeof r === 'string' && /^[\w:./+-]{3,300}$/.test(r)).slice(0, 400);
+  const refs = (Array.isArray(b.refs) ? b.refs : []).filter(r => typeof r === 'string' && /^[\w:./+@,-]{3,300}$/.test(r)).slice(0, 400);
   return c.json(reader(w.id).models(refs));
 });
 export function colorsFor(workspaceId, keys) {

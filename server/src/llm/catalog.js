@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { ROOT_DIR, DATA_DIR } from '../config.js';
 
 function parse(text) {
-  const m = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  const m = text.replace(/\r\n/g, '\n').match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);   // git en Windows puede dejarlos con CRLF
   if (!m) return { meta: {}, body: text };
   const meta = {};
   for (const line of m[1].split('\n')) {

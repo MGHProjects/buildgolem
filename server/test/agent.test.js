@@ -50,3 +50,18 @@ test('ask_user corta el turno y devuelve las preguntas', async () => {
   ]), () => {});
   assert.equal(r.asked[0].question, '¿De dónde sale la energía?');
 });
+
+test('render_design: la imagen llega al modelo y, si no admite imágenes, se reintenta sin ella', async () => {
+  const seen = [], events = [];
+  const c = ctx([
+    () => ({ text: '', toolCalls: [{ id: 'r1', name: 'render_design', args: { view: 'se' } }] }),
+    msgs => { seen.push(msgs.at(-1)); throw new Error('El proveedor respondió 400: image input is not supported'); },
+    msgs => { seen.push(msgs.at(-1)); return { text: 'listo', toolCalls: [] }; },
+  ]);
+  const r = await runAgent('architect', [{ role: 'user', content: 'mira el diseño' }], c, e => events.push(e));
+  assert.equal(r.text, 'listo');
+  assert.equal(seen[0].images?.[0]?.mime, 'image/png');                              // primer intento: con la imagen
+  assert.ok(!seen[1].images && /no recibe imágenes/.test(seen[1].content));           // reintento: sin ella y avisado
+  assert.equal(c.noVision, true);
+  assert.ok(events.some(e => e.type === 'result' && /^data:image\/png;base64,/.test(e.image || '')));   // la web la enseña
+});

@@ -31,7 +31,7 @@ public final class ClientSetup {
         modBus.addListener(ClientSetup::layers);
         modBus.addListener(ClientSetup::renderers);
         NeoForge.EVENT_BUS.addListener(ClientSetup::outline);
-        if (ModList.get().isLoaded("buildgolem_link")) BlankBlueprintItem.clientRecord = LinkBridge::record;
+        if (ModList.get().isLoaded("buildgolem_link")) { BlankBlueprintItem.clientRecord = LinkBridge::record; StockClient.install(); }
     }
 
     private static void layers(EntityRenderersEvent.RegisterLayerDefinitions e) { e.registerLayerDefinition(BuilderGolemModel.LAYER, BuilderGolemModel::create); }
