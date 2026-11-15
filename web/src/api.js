@@ -27,10 +27,7 @@ export async function uploadChunks(workspaceId, file, onProgress) {
   return api(`/workspaces/${workspaceId}/complete`, { method: 'POST', body: {} });
 }
 
-// chat con agentes por SSE (fetch + lector de flujo, porque EventSource no admite POST)
-export async function chatStream(designId, payload, onEvent, signal) {
-  const r = await fetch(`/api/designs/${designId}/chat`, { method: 'POST', signal, headers: { 'content-type': 'application/json', 'x-craftometry': '1' }, body: JSON.stringify(payload) });
-  if (!r.ok) { const j = await r.json().catch(() => ({})); throw new ApiError(r.status, j.error || `Error ${r.status}`); }
+async function readSSE(r, onEvent) {
   const reader = r.body.getReader(), dec = new TextDecoder();
   let buf = '';
   for (;;) {
@@ -43,5 +40,31 @@ export async function chatStream(designId, payload, onEvent, signal) {
       const line = chunk.split('\n').find(l => l.startsWith('data:'));
       if (line) { try { onEvent(JSON.parse(line.slice(5))); } catch { /* evento roto */ } }
     }
+  }
+}
+
+// chat con agentes por SSE (fetch + lector de flujo, porque EventSource no admite POST). El turno sigue en el servidor aunque
+// se corte la conexión: aquí se reengancha solo con …/chat/live desde el último evento visto. payload null = solo engancharse.
+export async function chatStream(designId, payload, onEvent, signal) {
+  const headers = { 'content-type': 'application/json', 'x-craftometry': '1' };
+  let from = 0, finished = false, fails = 0;
+  const on = ev => { if (ev.n != null) from = ev.n + 1; if (ev.type === 'done' || ev.type === 'error') finished = true; onEvent(ev); };
+  for (let first = payload != null; ;) {
+    try {
+      const r = first ? await fetch(`/api/designs/${designId}/chat`, { method: 'POST', signal, headers, body: JSON.stringify(payload) })
+        : await fetch(`/api/designs/${designId}/chat/live?from=${from}`, { signal, headers });
+      first = false;
+      if (r.status === 204) return;                                  // no hay turno en marcha (o ya terminó)
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new ApiError(r.status, j.error || `Error ${r.status}`); }
+      fails = 0;
+      await readSSE(r, on);
+      if (finished) return;
+    } catch (e) {
+      if (signal?.aborted || e instanceof ApiError) throw e;
+      if (++fails > 20) throw new ApiError(0, e.message || 'network error');
+    }
+    onEvent({ type: 'reconnecting' });
+    await new Promise(r => setTimeout(r, Math.min(1000 * 2 ** fails, 15_000)));
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
   }
 }

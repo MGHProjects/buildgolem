@@ -46,6 +46,7 @@ async function call(url, headers, payload, signal) {
 async function openaiChat(base, key, model, messages, tools, signal) {
   const msgs = messages.map(m => m.role === 'tool' ? { role: 'tool', tool_call_id: m.toolCallId, content: m.content }
     : m.toolCalls?.length ? { role: 'assistant', content: m.content || null, tool_calls: m.toolCalls.map(t => ({ id: t.id, type: 'function', function: { name: t.name, arguments: JSON.stringify(t.args) }, ...(t.extra && { extra_content: t.extra }) })) }
+    : m.images?.length ? { role: m.role, content: [{ type: 'text', text: m.content || '' }, ...m.images.map(im => ({ type: 'image_url', image_url: { url: `data:${im.mime};base64,${im.data}` } }))] }
     : { role: m.role, content: m.content });
   const payload = { model, messages: msgs };
   if (tools?.length) payload.tools = tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
@@ -66,7 +67,11 @@ async function anthropicChat(base, key, model, messages, tools, signal) {
       if (last?.role === 'user' && Array.isArray(last.content) && last.content.every(b => b.type === 'tool_result')) last.content.push(block);
       else out.push({ role: 'user', content: [block] });
     } else if (m.toolCalls?.length) out.push({ role: 'assistant', content: [...(m.content ? [{ type: 'text', text: m.content }] : []), ...m.toolCalls.map(t => ({ type: 'tool_use', id: t.id, name: t.name, input: t.args }))] });
-    else out.push({ role: m.role, content: m.content });
+    else if (m.images?.length) {
+      // imagen tras los resultados de herramientas: va en el mismo turno del usuario
+      const blocks = [...m.images.map(im => ({ type: 'image', source: { type: 'base64', media_type: im.mime, data: im.data } })), { type: 'text', text: m.content || '' }], last = out.at(-1);
+      if (last?.role === 'user' && Array.isArray(last.content)) last.content.push(...blocks); else out.push({ role: 'user', content: blocks });
+    } else out.push({ role: m.role, content: m.content });
   }
   const payload = { model, max_tokens: 4096, system, messages: out };
   if (tools?.length) payload.tools = tools.map(t => ({ name: t.name, description: t.description, input_schema: t.parameters }));

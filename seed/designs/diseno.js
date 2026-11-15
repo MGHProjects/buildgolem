@@ -1,5 +1,5 @@
-// Diseño del Centro AE2 — sala 43 (X) x 43 (Z) x 39 (Y). Norte = Z bajo.
-// Coordenadas: 0 y 42 son la capa de revestimiento de paredes; Y=0 suelo, Y=38 techo.
+// Diseño del Centro AE2 — sala 43 (X) x 43 (Z) x 40 (Y). Norte = Z bajo.
+// Coordenadas: 0 y 42 son la capa de revestimiento de paredes; Y=0 suelo, Y=39 techo.
 
 // Paleta: id -> { name, mod id del bloque, texturas por cara, glow, glass/cutout }
 export const P = {
@@ -104,7 +104,7 @@ for (const t of MEK) {
   P['mek_' + t] = { n: `Factoría ${MEK_ES[t]} Ultimate`, id: `mekanism:ultimate_${t}_factory`, front: b + 'front_active', side: b + 'side', top: b + 'top', bottom: b + 'bottom', back: t === 'smelting' ? b + 'side' : b + 'back' };
 }
 
-export const W = 43, H = 39, C = 21;
+export const W = 43, H = 40, C = 21;
 const blocks = new Map();
 // o = { tag, top (escalera invertida), cable (cable denso con fachada de este bloque) }
 const put = (x, y, z, t, f = 's', o = {}) => blocks.set(`${x},${y},${z}`, { x, y, z, t, f, ...o });
@@ -335,7 +335,7 @@ for (let x = 9; x <= 33; x++) { // interfaces subidas un bloque: debajo va su bu
 p2p(15, 12, 41, [0, 1, 0], 'out', 'l2_sur'); p2p(27, 12, 41, [0, 1, 0], 'out', 'l2_sur');
 
 // ── 9. Techo: tu controlador (invertido, colgando) ───────────────────────
-// de arriba abajo: placa de anclaje · 3x3 de Wireless Connectors encima · controlador 3x3x3 con un collar de 12 conectores en su fila superior · tronco
+// de arriba abajo: placa de anclaje · 3x3 de Wireless Connectors encima · controlador 3x3x3 en marco hueco (sin el centro ni el centro de cada cara) con un collar de 12 conectores en su fila superior · tronco
 // Regla de AE2 (InWorldGridNode.hasCompatibleColor): dos bloques pegados solo se unen si uno no tiene color o los dos tienen el mismo.
 // El controlador no tiene color: cada conector que lo TOCA se une, sea del color que sea. Un conector pegado solo a otro conector
 // de distinto color queda aislado (y aunque sea del mismo color, comparte los 32 canales del primero). Por eso todos lo tocan.
@@ -343,14 +343,17 @@ const HUB = ['purple', 'white', 'light_gray', 'orange', 'cyan', 'green', 'red', 
 let hi = 0;
 for (let x = C - 3; x <= C + 3; x++) for (let z = C - 3; z <= C + 3; z++) {
   const dx = Math.abs(x - C), dz = Math.abs(z - C), d = Math.max(dx, dz);
-  if (d <= 1) put(x, 36, z, 'hub_' + HUB[hi++ % HUB.length]);                        // cara superior del controlador
-  if (d === 2 && Math.min(dx, dz) <= 1) put(x, 35, z, 'hub_' + HUB[hi++ % HUB.length]); // collar: caras laterales, fila superior
-  if (d <= 2) put(x, 37, z, 'skys');                                                // anclaje al techo
-  if (d === 3) put(x, 37, z, 'skys_st', dx === 3 ? (x > C ? 'e' : 'w') : (z > C ? 's' : 'n'), { top: true }); // cornisa escalonada
+  if (d <= 1) put(x, 37, z, 'hub_' + HUB[hi++ % HUB.length]);                        // cara superior del controlador
+  if (d === 2 && Math.min(dx, dz) <= 1) put(x, 36, z, 'hub_' + HUB[hi++ % HUB.length]); // collar: caras laterales, fila superior
+  if (d <= 2) put(x, 38, z, 'skys');                                                // anclaje al techo
+  if (d === 3) put(x, 38, z, 'skys_st', dx === 3 ? (x > C ? 'e' : 'w') : (z > C ? 's' : 'n'), { top: true }); // cornisa escalonada
 }
-box(C - 1, 33, C - 1, C + 1, 35, C + 1, 'ctrl');
+box(C - 1, 34, C - 1, C + 1, 36, C + 1, 'ctrl');
 const N6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
 const touches = (b, t) => N6.some(([dx, dy, dz]) => blocks.get(`${b.x + dx},${b.y + dy},${b.z + dz}`)?.t === t);
+// el controlador es un marco: sin el bloque del centro ni el centro de cada cara, como está construido; el conector de encima del hueco no tocaría el controlador
+for (const [dx, dy, dz] of [[0, 0, 0], ...N6]) blocks.delete(`${C + dx},${35 + dy},${C + dz}`);
+blocks.delete(`${C},37,${C}`);
 for (const b of blocks.values()) if (b.t.startsWith('hub_') && !touches(b, 'ctrl')) throw new Error(`El Wireless Connector de ${b.x},${b.y},${b.z} no toca el controlador`);
 
 // ── 10. Del controlador salen 9 cables densos de colores (uno por cara inferior) ──
@@ -369,10 +372,11 @@ const LANES = [ // color, celda del tronco (dx,dz), puente, desvío lateral, zon
 ];
 const BR = { E: [1, 0], W: [-1, 0], N: [0, -1], S: [0, 1] };
 for (const L of LANES) {
-  for (let y = 12; y <= 32; y++) {
-    const ring = y % 6 === 2 || y === 32, corner = L.tx && L.tz, center = !L.tx && !L.tz;
+  for (let y = 12; y <= 33; y++) {
+    const ring = y % 6 === 2 || y === 33, corner = L.tx && L.tz, center = !L.tx && !L.tz;
     run(C + L.tx, y, C + L.tz, center ? 'pdeep' : ring ? 'cdeep' : corner ? 'pdeep' : 'vibr', 'c', L.col);
   }
+  if (!L.tx && !L.tz) run(C, 34, C, 'dcable', 'c', L.col);                       // el central sube por el hueco del marco y toca los 4 controladores de alrededor
   if (!L.br) continue;
   const [ux, uz] = BR[L.br], [px, pz] = [uz ? 1 : 0, ux ? 1 : 0];
   for (let k = 2; k <= 14; k++) run(C + ux * k + px * L.off, 12, C + uz * k + pz * L.off, L.off ? 'pdeep' : 'skys', 'c', L.col); // puente
@@ -489,8 +493,8 @@ for (const [w, yEdge] of [[6, 12], [4, 25]]) {
 }
 // techo: 8 faroles con cadena larga entre los rayos de luz, alrededor del controlador
 for (const [dx, dz] of [[10, 4], [4, 10], [-4, 10], [-10, 4], [-10, -4], [-4, -10], [4, -10], [10, -4]]) {
-  for (let y = 34; y <= 37; y++) if (!deco(C + dx, y, C + dz, 'chain')) throw new Error(`Cadena del techo choca en ${dx},${y},${dz}`);
-  deco(C + dx, 33, C + dz, 'slant');
+  for (let y = 35; y <= 38; y++) if (!deco(C + dx, y, C + dz, 'chain')) throw new Error(`Cadena del techo choca en ${dx},${y},${dz}`);
+  deco(C + dx, 34, C + dz, 'slant');
 }
 
 for (const e of [...blocks.values()].filter(b => b.t === 'elev')) {
@@ -592,7 +596,8 @@ const nIn = P2P.filter(p => p.io === 'in').length, nOut = P2P.length - nIn;
 // un cable denso = 32 canales; cada salida P2P conectada a él ocupa 1
 const CARRIERS = LANES.map(L => ({ col: L.col, zones: L.zones.map(z => CH[z].n), outs: P2P.filter(p => p.col === L.col).length }));
 for (const c of CARRIERS) if (c.outs > 32) throw new Error(`Cable ${c.col}: ${c.outs} salidas P2P (máximo 32)`);
-for (const L of LANES) if (blocks.get(`${C + L.tx},33,${C + L.tz}`)?.t !== 'ctrl' || blocks.get(`${C + L.tx},32,${C + L.tz}`)?.col !== L.col) throw new Error(`El cable ${L.col} no sale del controlador`);
+for (const L of LANES) { const c = blocks.get(`${C + L.tx},33,${C + L.tz}`), up = blocks.get(`${C + L.tx},34,${C + L.tz}`);
+  if (c?.col !== L.col || !(up?.t === 'ctrl' || (up?.col === L.col && touches(up, 'ctrl')))) throw new Error(`El cable ${L.col} no sale del controlador`); }
 const nWifi = B().filter(b => b.t.startsWith('hub_')).length;
 export const CHANNELS = { zones: CH, P2P, nIn, nOut, carriers: CARRIERS, wireless: nWifi, sideFaces: 36 - (nWifi - 9) };
 
@@ -613,7 +618,7 @@ export const ZONES = [
   { n: 'Árboles + Matrix', p: [21.5, 8, 24], t: [21.5, 5, 38] },
   { n: 'Procesado AE2 (E)', p: [28, 7, 21.5], t: [40, 3, 21.5] },
   { n: 'Mekanism (O)', p: [15, 7, 21.5], t: [2, 3, 21.5] },
-  { n: 'Controlador', p: [26.5, 31, 27], t: [21.5, 34.6, 21.5] },
+  { n: 'Controlador', p: [26.5, 32, 27], t: [21.5, 35.6, 21.5] },
   { n: 'Suelo vacío', p: [27, 8, 27], t: [21.5, -10, 21.5] },
   { n: 'Escalones (L2)', p: [12, 9, 30], t: [6, 11, 22] },
   { n: 'Puentes (L2)', p: [30, 19, 30], t: [21.5, 12, 21.5] },

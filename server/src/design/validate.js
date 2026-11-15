@@ -25,6 +25,32 @@ export function occupancy(m) {
 // lados de la celda de una pieza que tocan un bloque que no es cable de AE2: [[lado, bloque], …]
 export const touching = (m, owner, t) => Object.entries(DIRS).map(([f, d]) => [f, owner.get(`${t.x + d[0]},${t.y + d[1]},${t.z + d[2]}`)]).filter(([, b]) => b && !isCableCell(m, b));
 
+// grupos de bloques unidos (una vara o una cadena solo por las puntas de su eje) que no llegan al suelo del diseño
+const NATURE = /^minecraft:(grass_block|dirt|coarse_dirt|rooted_dirt|podzol|mycelium|moss_block|stone|andesite|diorite|granite|tuff|deepslate|calcite|cobblestone|mossy_cobblestone|gravel|sand|dripstone_block|pointed_dripstone|amethyst_cluster|\w+_amethyst_bud|cave_vines(_plant)?|glow_lichen|hanging_roots|spore_blossom|vine|\w+_ore|\w+_leaves|\w+_log|\w+_wood)$/;
+const THIN = /end_rod|lightning_rod|(^|:)chain$/, AXIS6 = { x: [[1, 0, 0], [-1, 0, 0]], y: [[0, 1, 0], [0, -1, 0]], z: [[0, 0, 1], [0, 0, -1]] };
+const ALL6 = [...AXIS6.x, ...AXIS6.y, ...AXIS6.z], FACE_AXIS = { up: 'y', down: 'y', north: 'z', south: 'z', east: 'x', west: 'x' };
+export function looseGroups(m, owner = occupancy(m), max = 64) {
+  // up/down se guarda en props; norte/sur/este/oeste, en b.f
+  const dirs = b => { const s = m.P[b.t], id = s?.id || ''; if (!THIN.test(id)) return ALL6; if (/chain/.test(id)) return AXIS6[s.props?.axis || 'y']; const pf = s.props?.facing; return AXIS6[pf ? FACE_AXIS[pf] || 'y' : b.f === 'e' || b.f === 'w' ? 'x' : 'z']; };
+  const ys = m.BLOCKS.map(b => b.y), floor = ys.length ? Math.min(...ys) : 0, seen = new Set(), out = [];
+  for (const b0 of m.BLOCKS) {
+    if (seen.has(b0)) continue;
+    const g = [b0], q = [b0]; seen.add(b0); let grounded = false;
+    while (q.length) {
+      const u = q.pop(); if (u.y <= floor) grounded = true;
+      // unidas si al menos una toca a la otra con la punta (una vara saliendo de un mástil sí se sostiene; dos de lado, no)
+      const du = dirs(u);
+      for (const c of footprint(u, m.P[u.t])) for (const d of ALL6) {
+        const v = owner.get(`${c[0] + d[0]},${c[1] + d[1]},${c[2] + d[2]}`);
+        if (!v || v === u || seen.has(v) || (!du.includes(d) && !dirs(v).some(e => e[0] === -d[0] && e[1] === -d[1] && e[2] === -d[2]))) continue;
+        seen.add(v); g.push(v); q.push(v);
+      }
+    }
+    if (!grounded && g.length <= max) out.push(g);
+  }
+  return out;
+}
+
 export function validateModel(m) {
   const errors = [], warnings = [], owner = new Map();
   for (const b of m.BLOCKS) {
@@ -48,9 +74,21 @@ export function validateModel(m) {
     errors.push({ at, msg: `${s.id} mira a ${SIDE_NAME[t.f]} y ahí hay ${front ? 'otro cable' : 'aire'}: tiene que tocar lo que alimenta. `
       + (near.length ? `Lados de esa celda que tocan algo: ${near.map(([f, b]) => `${SIDE_NAME[f]} (${m.P[b.t]?.id})`).join(', ')}` : 'Ningún lado de esa celda toca una máquina: lleva el cable junto a ella.') });
   }
-  const ys = m.BLOCKS.map(b => b.y), floor = ys.length ? Math.min(...ys) : 0;
-  let floating = 0;
-  for (const b of m.BLOCKS) if (b.y > floor && !owner.has(`${b.x},${b.y - 1},${b.z}`) && ![[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]].some(([dx, dy, dz]) => owner.has(`${b.x + dx},${b.y + dy},${b.z + dz}`))) floating++;
-  if (floating) warnings.push({ msg: `${floating} bloques sin ningún vecino (flotan)` });
+  // isla flotante: columnas cuyo primer bloque es obra (no terreno ni plantas) y no tienen nada debajo: se salen del borde
+  if (m.KINDS?.terrain) {
+    const low = new Map(); let floor = Infinity;
+    for (const b of m.BLOCKS) { if (b.y < floor) floor = b.y; const k = `${b.x},${b.z}`, o = low.get(k); if (!o || b.y < o.y) low.set(k, b); }
+    const over = [...low.values()].filter(b => b.y > floor && !NATURE.test(m.P[b.t]?.id || ''));
+    if (over.length) {
+      const ids = {}; for (const b of over) { const id = m.P[b.t]?.id || b.t; ids[id] = (ids[id] || 0) + 1; }
+      warnings.push({ msg: `${over.length} columnas de obra sobre el vacío, sin nada debajo (${Object.entries(ids).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, n]) => `${k} ×${n}`).join(', ')}): se salen del borde de la isla; muévelas hacia dentro con 2-3 de margen, aleros incluidos`, at: over.slice(0, 8).map(b => [b.x, b.y, b.z]) });
+    }
+  }
+  const loose = looseGroups(m, owner);
+  if (loose.length) {
+    const ids = {}; for (const g of loose) for (const b of g) { const id = m.P[b.t]?.id || b.t; ids[id] = (ids[id] || 0) + 1; }
+    const thin = loose.some(g => g.some(b => THIN.test(m.P[b.t]?.id || '')));
+    warnings.push({ msg: `${loose.length} piezas sueltas en el aire (${Object.entries(ids).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, n]) => `${k} ×${n}`).join(', ')})${thin ? ': una vara o una cadena solo se sostiene por sus puntas; tocarse de lado no las une' : ''}`, at: loose.slice(0, 8).map(g => [g[0].x, g[0].y, g[0].z]) });
+  }
   return { ok: !errors.length, errors: errors.slice(0, 50), errorCount: errors.length, warnings };
 }

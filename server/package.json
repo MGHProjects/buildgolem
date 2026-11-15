@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.14.0",
-    "hono": "^4.7.0"
+    "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
+    "hono": "^4.7.0",
+    "quickjs-emscripten-core": "0.32.0"
   }
 }

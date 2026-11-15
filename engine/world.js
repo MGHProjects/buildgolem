@@ -7,7 +7,7 @@ export const key = (x, y, z) => `${x},${y},${z}`;
 export function createWorld(M) {
   const { P, BLOCKS, W, H } = M;
   const TERMS = M.TERMS ?? [], FIBER = M.FIBER ?? [], CHANNELS = M.CHANNELS ?? { P2P: [], zones: {}, carriers: [] };
-  const WX = M.WX ?? W, WZ = M.WZ ?? W, WB = M.WALLS ?? { x0: 0, x1: W - 1, z0: 0, z1: W - 1, top: H - 1 };
+  const WX = M.WX ?? W, WZ = M.WZ ?? W, WB = M.WALLS ?? { x0: 0, x1: WX - 1, z0: 0, z1: WZ - 1, top: H - 1 }; // salas no cuadradas: la pared sur está en WZ - 1
   // variantes de luz del pozo (Centro AE2): mismas posiciones que las End Rods; la ×2 añade un segundo tramo hacia el centro
   const ALT = [];
   for (const b of BLOCKS) if (b.t === 'fix') {
@@ -15,7 +15,9 @@ export function createWorld(M) {
     ALT.push({ ...b, t: 'bar', tag: 'L_bar' }, { ...b, x: b.x + ax, z: b.z + az, t: 'bar', tag: 'L_bar2' });
     b.tag = 'L_end';
   }
-  const GB = BLOCKS.concat(ALT), ALL = GB.concat(TERMS); // las partes van en la celda de su cable, no ocupan una propia
+  // objetos expuestos: se dibujan como un bloque más (su modelo es el del objeto); sobre un pedestal, en la celda de encima
+  const DISP = (M.DISPLAYS ?? []).filter(d => P[d.t] && STEP[d.f]).map(d => ({ x: d.x, y: d.kind === 'block' && !d.inside ? d.y + 1 : d.y, z: d.z, t: d.t, f: d.f, tag: 'int', disp: d }));
+  const GB = BLOCKS.concat(ALT, DISP), ALL = GB.concat(TERMS); // las partes van en la celda de su cable, no ocupan una propia
   const AT = new Map(BLOCKS.map(b => [key(b.x, b.y, b.z), b]));
   const P2PAT = new Map(), TERMAT = new Map(), TERMF = new Set();
   for (const p of CHANNELS.P2P) (P2PAT.get(key(p.x, p.y, p.z)) ?? P2PAT.set(key(p.x, p.y, p.z), []).get(key(p.x, p.y, p.z))).push(p);

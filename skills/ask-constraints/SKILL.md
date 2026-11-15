@@ -14,7 +14,9 @@ Pregunta solo lo que falte y cambie el diseño entero: una llamada a `ask_user`,
 | Ubicación | Hay máquinas que necesitan cielo | Superficie · Bajo tierra · Otra dimensión | Superficie |
 | Progresión | Qué tiers puede fabricar | Inicial · Media · Final | Final: el mejor tier que haya en el workspace |
 | Objetivo | Cuánto produce | Caudal (x/min) · Lo máximo que quepa | Una línea completa de cada cadena pedida |
-| Estilo | Decoración | Del mismo mod · Industrial · Libre | Del mismo mod |
+| Estilo | Decoración (fábricas) o arquitectura (edificios) | Fábricas: Del mismo mod · Industrial · Libre. Edificios: Japonés · Chino · Medieval · Moderno · Temático por mod | Fábricas: del mismo mod. Edificios: el que encaje con el tema; si hay varios mods, un estilo para el exterior y el tema de cada mod dentro |
+| Tema (salas y decoración) | Paleta y objetos | Mods del tema · Vanilla · Libre | Los mods que nombró; si no, el del objeto principal |
+| Objetos a exponer | Cuántos expositores | Lista · Los jefes del mod · Según las misiones · A tu criterio | Lo que marcan las misiones del pack (`search_quests`): jefes, armas, ingredientes de la meta final |
 
 Reglas:
 - No preguntes lo que ya dijo el jugador o se ve en el diseño.

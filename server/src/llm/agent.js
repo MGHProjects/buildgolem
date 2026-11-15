@@ -5,6 +5,8 @@ import { getAgents, listSkills, readSkill } from './catalog.js';
 import { TOOL_DEFS, runTool } from './tools.js';
 import { AGENT_MAX_STEPS } from '../config.js';
 
+const SERIAL = new Set(['edit_design', 'set_process', 'write_skill', 'ask_user']);
+
 // razonamiento que algunos modelos (DeepSeek, Qwen…) escriben en el texto: no es para el jugador
 export const cleanText = s => String(s || '').replace(/<(think|thought|thinking)>[\s\S]*?<\/\1>/gi, '').replace(/^[\s\S]*?<\/(think|thought|thinking)>/i, '').trim();
 
@@ -29,10 +31,20 @@ export async function runAgent(agentName, history, ctx, emit, depth = 0) {
   if (!agent) throw new Error(`Agente desconocido: ${agentName}`);
   const json = ctx.key.toolMode === 'json', tools = (agent.tools || []).filter(t => TOOL_DEFS[t]).map(t => ({ name: t, ...TOOL_DEFS[t] }));
   const messages = [{ role: 'system', content: systemPrompt(agent, ctx, json) }, ...history];
-  const send = extra => (ctx.chat || chat)({ ...ctx.key, messages, signal: ctx.signal, ...extra });   // ctx.chat: modelo simulado en pruebas
+  const call = extra => (ctx.chat || chat)({ ...ctx.key, messages, signal: ctx.signal, ...extra });   // ctx.chat: modelo simulado en pruebas
+  // imágenes de render_design: solo las 2 últimas viajan (pesan); si el modelo no admite imágenes, se quitan y se reintenta
+  const dropImages = (keep, why) => { let seen = 0; for (let i = messages.length - 1; i >= 0; i--) if (messages[i].images && ++seen > keep) messages[i] = { role: 'user', content: `${messages[i].content} ${why}` }; };
+  const send = async extra => {
+    dropImages(2, '(imagen antigua retirada)');
+    try { return await call(extra); } catch (e) {
+      if (!messages.some(m => m.images) || !/image|vision|multimodal|content|unsupported|invalid|400/i.test(e.message)) throw e;
+      ctx.noVision = true; dropImages(0, '(este modelo no recibe imágenes: usa view_design y review_design para comprobar la forma)');
+      return call(extra);
+    }
+  };
   let asked = null, retries = 0;
-  const sub = {
-    ...ctx,
+  // hereda de ctx sin copiarlo: design es un getter/setter del turno y todos los agentes (también en paralelo) ven el último
+  const sub = Object.assign(Object.create(ctx), {
     onAsk: q => { asked = q; emit({ type: 'ask', agent: agentName, questions: q }); },
     runAgent: async (name, task) => {
       if (depth >= 2) return 'No se pueden encadenar más de 2 niveles de agentes.';
@@ -40,6 +52,18 @@ export async function runAgent(agentName, history, ctx, emit, depth = 0) {
       const r = await runAgent(name, [{ role: 'user', content: task }], ctx, emit, depth + 1);
       return r.text || '(sin respuesta)';
     },
+  });
+  const exec = async call => {
+    emit({ type: 'tool', agent: agentName, name: call.name, args: call.args });
+    let out, image = null;
+    try {
+      if (!agent.tools.includes(call.name)) throw new Error(`El agente ${agentName} no puede usar ${call.name}`);
+      const res = await runTool(call.name, call.args || {}, sub);
+      if (res && typeof res === 'object' && 'text' in res) { out = String(res.text); image = res.image || null; } else out = String(res);
+    } catch (e) { out = `Error: ${e.message}`; }
+    if (image && ctx.noVision) { out += ' (este modelo no recibe imágenes: usa view_design y review_design)'; image = null; }
+    emit({ type: 'result', agent: agentName, name: call.name, text: out.slice(0, 600), image: image ? `data:${image.mime};base64,${image.data}` : undefined });
+    return { out, image };
   };
   // preguntas escritas como texto ({"questions": […]}) en vez de llamar a ask_user: se tratan igual
   const textQuestions = text => {
@@ -71,17 +95,11 @@ export async function runAgent(agentName, history, ctx, emit, depth = 0) {
       if (!calls.length) return { text, messages };
       messages.push({ role: 'assistant', content: text, toolCalls: calls });
     }
-    for (const call of calls) {
-      emit({ type: 'tool', agent: agentName, name: call.name, args: call.args });
-      let out;
-      try {
-        if (!agent.tools.includes(call.name)) throw new Error(`El agente ${agentName} no puede usar ${call.name}`);
-        out = await runTool(call.name, call.args || {}, sub);
-      } catch (e) { out = `Error: ${e.message}`; }
-      emit({ type: 'result', agent: agentName, name: call.name, text: String(out).slice(0, 600) });
-      if (json) messages.push({ role: 'user', content: `Resultado de ${call.name}: ${out}` });
-      else messages.push({ role: 'tool', toolCallId: call.id, name: call.name, content: String(out) });
-    }
+    // varias llamadas que solo leen o delegan van a la vez (tres consultas no esperan tres veces); las que cambian cosas, en orden
+    const outs = calls.some(c => SERIAL.has(c.name)) ? [] : await Promise.all(calls.map(exec));
+    if (!outs.length) for (const call of calls) outs.push(await exec(call));
+    calls.forEach((call, i) => messages.push(json ? { role: 'user', content: `Resultado de ${call.name}: ${outs[i].out}` } : { role: 'tool', toolCallId: call.id, name: call.name, content: outs[i].out }));
+    calls.forEach((call, i) => { if (outs[i].image) messages.push({ role: 'user', content: `Imagen de ${call.name}: mírala con ojo crítico (proporciones, tejados, relieve, colores, lo que sobra o falta) antes de seguir.`, images: [outs[i].image] }); });
     if (asked) return { text: '', asked, messages };
   }
   // sin pasos: un último turno sin herramientas para que diga qué ha hecho y qué falta (a quien le encargó la tarea le sirve más que un aviso)

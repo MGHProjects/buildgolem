@@ -10,6 +10,7 @@ El workspace es el modpack exacto del jugador: sus jars, sus configs y sus scrip
 |---|---|---|
 | `search_blocks(query, mod?)` | Encontrar ids de bloque | Palabras sueltas en inglés o en el idioma del jugador; filtra por mod (`mekanism`, `ae2`) |
 | `get_block(id)` | Tamaño real, si es direccional, familia de tier | Si `size` no es 1×1×1 ocupa más de una celda |
+| `search_docs(query, mod?)` | El manual que trae el mod: multibloques, requisitos, conexiones | Palabras en inglés o el id del bloque |
 | `search_recipes(output?, input?, type?, mod?)` | Recetas reales con cantidades | Para máquinas, filtra por `type` (`mekanism:dissolution`) |
 | `get_config(mod, file?)` | Valores que dependen de la config | Sin `file` lista los archivos; con `file` devuelve su texto |
 | `calc(expr)` | Cuentas exactas | Nunca hagas cuentas de memoria |

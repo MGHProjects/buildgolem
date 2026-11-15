@@ -1,21 +1,26 @@
 // Exportación a estructura .nbt (formato de plantilla vanilla, lo que leen la Schematicannon de Create y /place template).
 import { gzipSync } from 'node:zlib';
 
-const T = { END: 0, INT: 3, STRING: 8, LIST: 9, COMPOUND: 10 };
+const T = { END: 0, BYTE: 1, INT: 3, FLOAT: 5, DOUBLE: 6, STRING: 8, LIST: 9, COMPOUND: 10 };
 class W {
   constructor() { this.parts = []; }
   u8(n) { const b = Buffer.alloc(1); b.writeUInt8(n); this.parts.push(b); }
   i16(n) { const b = Buffer.alloc(2); b.writeInt16BE(n); this.parts.push(b); }
   i32(n) { const b = Buffer.alloc(4); b.writeInt32BE(n); this.parts.push(b); }
+  f32(n) { const b = Buffer.alloc(4); b.writeFloatBE(n); this.parts.push(b); }
+  f64(n) { const b = Buffer.alloc(8); b.writeDoubleBE(n); this.parts.push(b); }
   str(s) { const b = Buffer.from(s, 'utf8'); this.i16(b.length); this.parts.push(b); }
   buf() { return Buffer.concat(this.parts); }
 }
-// valores: {int: n} · string · [lista de compuestos] · {list: tipo, items} · objeto = compuesto
-function tagOf(v) { return typeof v === 'string' ? T.STRING : v?.int != null ? T.INT : v?.list != null ? T.LIST : T.COMPOUND; }
+// valores: {int: n} · {byte: n} · {float: n} · {double: n} · string · {list: tipo, items} · objeto = compuesto
+function tagOf(v) { return typeof v === 'string' ? T.STRING : v?.int != null ? T.INT : v?.byte != null ? T.BYTE : v?.float != null ? T.FLOAT : v?.double != null ? T.DOUBLE : v?.list != null ? T.LIST : T.COMPOUND; }
 function payload(w, v) {
   const t = tagOf(v);
   if (t === T.STRING) w.str(v);
   else if (t === T.INT) w.i32(v.int);
+  else if (t === T.BYTE) w.u8(v.byte & 255);
+  else if (t === T.FLOAT) w.f32(v.float);
+  else if (t === T.DOUBLE) w.f64(v.double);
   else if (t === T.LIST) { w.u8(v.list); w.i32(v.items.length); for (const x of v.items) payload(w, x); }
   else { for (const [k, x] of Object.entries(v)) { w.u8(tagOf(x)); w.str(k); payload(w, x); } w.u8(T.END); }
 }
@@ -124,19 +129,47 @@ export function toStructureNbt(model) {
     }
     return nbt;
   };
+  // objetos expuestos: en un bloque expositor van en su inventario (Moonlight/Supplementaries y vanilla: Items con Slot byte,
+  // como ContainerHelper; Bibliocraft: items del ItemStackHandler, Slot int); marcos y soportes de armadura son entidades
+  const ITEM = /^[a-z0-9_.-]+:[a-z0-9_./-]+$/, held = new Map(), entities = [];
+  const stack = id => ({ id, count: { int: 1 } });
+  for (const d of model.DISPLAYS || []) {
+    const items = [].concat(d.item || []).filter(i => typeof i === 'string' && ITEM.test(i));
+    if (!items.length) continue;
+    if (d.kind === 'block') {
+      const b = at.get(K(d.x, d.y, d.z)), id = b && P[b.t]?.id;
+      if (!id) { skip(items[0]); continue; }
+      held.set(K(d.x, d.y, d.z), id.startsWith('bibliocraft:') ? { items: { Items: { list: T.COMPOUND, items: items.map((i, n) => ({ Slot: { int: n }, ...stack(i) })) } } }
+        : { Items: { list: T.COMPOUND, items: items.map((i, n) => ({ Slot: { byte: n }, ...stack(i) })) } });
+      continue;
+    }
+    const pos = { list: T.DOUBLE, items: [d.x - min[0] + .5, d.y - min[1] + (d.kind === 'stand' ? 0 : .5), d.z - min[2] + .5].map(v => ({ double: v })) };
+    const blockPos = { list: T.INT, items: [d.x - min[0], d.y - min[1], d.z - min[2]].map(v => ({ int: v })) };
+    if (d.kind === 'frame') entities.push({ pos, blockPos, nbt: { id: 'minecraft:item_frame', Facing: { byte: { d: 0, u: 1, n: 2, s: 3, w: 4, e: 5 }[d.f] ?? 3 }, Fixed: { byte: 1 }, Item: stack(items[0]) } });
+    else if (d.kind === 'stand') {
+      const slot = re => items.find(i => re.test(i)), empty = {};
+      const armor = [/boots$/, /leggings$/, /chestplate$|_chest$|elytra$/, /helmet$|_head$|_skull$|_hat$|_crown$/].map(re => (slot(re) ? stack(slot(re)) : empty));
+      const hand = items.find(i => !/boots$|leggings$|chestplate$|_chest$|elytra$|helmet$|_head$|_skull$|_hat$|_crown$/.test(i));
+      entities.push({ pos, blockPos, nbt: { id: 'minecraft:armor_stand', ShowArms: { byte: 1 }, Rotation: { list: T.FLOAT, items: [{ float: { s: 0, w: 90, n: 180, e: 270 }[d.f] ?? 0 }, { float: 0 }] },
+        ArmorItems: { list: T.COMPOUND, items: armor }, HandItems: { list: T.COMPOUND, items: [hand ? stack(hand) : {}, {}] } } });
+    }
+  }
   const blocks = keep.map(b => {
     const pos = { list: T.INT, items: [{ int: b.x - min[0] }, { int: b.y - min[1] }, { int: b.z - min[2] }] };
     if (foreign(b)) return { pos, state: { int: state(P[b.t].cable) } };
     if (b.bare || isBus(b)) return { pos, state: { int: state(BUS) }, nbt: busNbt(b) };
-    const scr = MONITOR.test(P[b.t].id) && screens.get(K(b.x, b.y, b.z));
-    return scr ? { pos, state: { int: state(P[b.t].id, propsOf(b)) }, nbt: { id: P[b.t].id, ...scr.nbt } } : { pos, state: { int: state(P[b.t].id, propsOf(b)) } };
+    const scr = MONITOR.test(P[b.t].id) && screens.get(K(b.x, b.y, b.z)), inv = held.get(K(b.x, b.y, b.z));
+    // Redstone Link de Create con su frecuencia ya puesta (los dos objetos), y emisor o receptor según su estado
+    if (Array.isArray(b.freq) && b.freq.length === 2) return { pos, state: { int: state(P[b.t].id, propsOf(b)) }, nbt: { id: P[b.t].id, FrequencyFirst: stack(b.freq[0]), FrequencyLast: stack(b.freq[1]), Transmitter: { byte: P[b.t].props?.receiver === 'true' ? 0 : 1 } } };
+    return scr ? { pos, state: { int: state(P[b.t].id, propsOf(b)) }, nbt: { id: P[b.t].id, ...scr.nbt } }
+      : inv ? { pos, state: { int: state(P[b.t].id, propsOf(b)) }, nbt: inv } : { pos, state: { int: state(P[b.t].id, propsOf(b)) } };
   });
   const root = {
     DataVersion: { int: DATA_VERSION_1_21_1 },
     size: { list: T.INT, items: max.map((m, i) => ({ int: m - min[i] + 1 })) },
     palette: { list: T.COMPOUND, items: palette },
     blocks: { list: T.COMPOUND, items: blocks },
-    entities: { list: T.COMPOUND, items: [] },
+    entities: { list: T.COMPOUND, items: entities },
   };
   const w = new W();
   w.u8(T.COMPOUND); w.str(''); payload(w, root);
